@@ -80,6 +80,7 @@
 /*                               Typ-Definitionen                             */
 /*============================================================================*/
 /*!
+Enumeration/list of all actions the application can execute
 */
 typedef enum _action
 {
@@ -90,12 +91,15 @@ typedef enum _action
 } action_t;
 
 /*!
+This enumeration lists all possible data sources the application is able to dump
 */
-typedef struct _err_entry
+typedef enum _dumpmode
 {
-  int iCode;
-  const unsigned char* acText;
-} err_entry_t;
+  DUMP_NONE = 0,
+  DUMP_LOGICAL,
+  DUMP_PHYSICAL,
+  DUMP_FILE
+} dumpmode_t;
 
 /*============================================================================*/
 /*                               Prototypen                                   */

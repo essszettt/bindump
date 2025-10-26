@@ -38,6 +38,7 @@
 /*============================================================================*/
 #include <stdint.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <errno.h>
 
 #include <arch/zxn.h>
@@ -84,7 +85,7 @@ typedef struct _errentry
   /*!
   Pointer to a textual representation of the error code.
   */
-  const unsigned char* acText;
+  const char_t* acText;
 } errentry_t;
 
 /*============================================================================*/
@@ -149,7 +150,7 @@ bool zxn_radastan_mode(void)
 /*----------------------------------------------------------------------------*/
 /* zxn_strerror()                                                             */
 /*----------------------------------------------------------------------------*/
-const unsigned char* zxn_strerror(int iCode)
+const char_t* zxn_strerror(int iCode)
 {
   const errentry_t* pIndex = g_tErrTable;
 
@@ -164,6 +165,76 @@ const unsigned char* zxn_strerror(int iCode)
   }
 
   return pIndex->acText;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* zxn_normalizepath()                                                        */
+/*----------------------------------------------------------------------------*/
+int zxn_normalizepath(char_t* acPath)
+{
+  /*
+  ZX Spectrum Next Pfad-Normalisierung (in-place, joinbar)
+  - '\\' => '/'
+  - doppelte '/' zu einem '/'
+  - trailing '/' entfernen (ausser bei "/" => "/.")
+  - "/" wird zu "/."   (joinbar, aber bleibt im Root)
+  - "X:/" wird zu "X:"
+  Rueckgabe: EOK oder EINVAL bei Fehler.
+  */
+
+  if (NULL == acPath)
+  {
+    return EINVAL;
+  }
+
+  /* 1) '\' => '/' und doppelte '/' entfernen */
+  size_t r = 0, w = 0;
+  while ('\0' != acPath[r])
+  {
+    char c = acPath[r++];
+
+    if ('\\' == c)
+    {
+      c = '/';
+    }
+
+    if ('/' == c)
+    {
+      if ((0 < w) && ('/' == acPath[w - 1]))
+      {
+        continue;
+      }
+    }
+
+    acPath[w++] = c;
+  }
+
+  acPath[w] = '\0';
+
+  /* 2) Spezialfaelle fuer "joinbare" Basen */
+  if ((1 == w) && ('/' == acPath[0]))
+  {
+    /* "/" => "/." */
+    acPath[1] = '.';
+    acPath[2] = '\0';
+    return EOK;
+  }
+
+  if ((3 == w) && isalpha((unsigned char) acPath[0]) && (':' == acPath[1]) && ('/' == acPath[2]))
+  {
+    /* "X:/" => "X:" */
+    acPath[2] = '\0';
+    return EOK;
+  }
+
+  /* 3) Allgemein: trailing '/' entfernen */
+  while ((0 < w) && ('/' == acPath[w - 1]))
+  {
+    acPath[--w] = '\0';
+  }
+
+  return EOK;
 }
 
 

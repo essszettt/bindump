@@ -96,6 +96,30 @@ static struct _state
   bool bForce;
 
   /*!
+  */
+  dumpmode_t eMode;
+
+  /*!
+  */
+  uint32_t uiOffset;
+
+  /*!
+  */
+  uint32_t uiSize;
+
+  struct
+  {
+    char_t acPathName[ESX_PATHNAME_MAX];
+    uint8_t hFile;
+  } ifile;
+
+  struct
+  {
+    char_t acPathName[ESX_PATHNAME_MAX];
+    uint8_t hFile;
+  } ofile;
+
+  /*!
   Backup: Current speed of Z80
   */
   uint8_t uiCpuSpeed;
@@ -165,15 +189,22 @@ int dumpData(void);
 /*----------------------------------------------------------------------------*/
 void _construct(void)
 {
-  g_tState.eAction       = ACTION_NONE;
-  g_tState.bQuiet        = false;
-  g_tState.bForce        = false;
-  g_tState.iExitCode     = EOK;
-  g_tState.uiCpuSpeed    = ZXN_READ_REG(REG_TURBO_MODE) & 0x03;
+  g_tState.eAction     = ACTION_NONE;
+  g_tState.bQuiet      = false;
+  g_tState.bForce      = false;
+  g_tState.eMode       = DUMP_NONE;
+  g_tState.uiOffset    = 0;
+  g_tState.uiSize      = 0;
+  g_tState.ifile.acPathName[0] = '\0';
+  g_tState.ifile.hFile = INV_FILE_HND;
+  g_tState.ofile.acPathName[0] = '\0';
+  g_tState.ofile.hFile = INV_FILE_HND;
+  g_tState.iExitCode   = EOK;
+  g_tState.uiCpuSpeed  = ZXN_READ_REG(REG_TURBO_MODE) & 0x03;
 
   ZXN_WRITE_REG(REG_TURBO_MODE, RTM_28MHZ);
 
-  g_tState.bInitialized  = true;
+  g_tState.bInitialized = true;
 }
 
 
@@ -184,6 +215,18 @@ void _destruct(void)
 {
   if (g_tState.bInitialized)
   {
+    if (INV_FILE_HND != g_tState.ofile.hFile)
+    {
+      (void) esx_f_close(g_tState.ofile.hFile);
+      g_tState.ofile.hFile = INV_FILE_HND;
+    }
+
+    if (INV_FILE_HND != g_tState.ifile.hFile)
+    {
+      (void) esx_f_close(g_tState.ifile.hFile);
+      g_tState.ifile.hFile = INV_FILE_HND;
+    }
+
     ZXN_WRITE_REG(REG_TURBO_MODE, g_tState.uiCpuSpeed);
   }
 }
@@ -230,42 +273,114 @@ int parseArguments(int argc, char* argv[])
 {
   int iReturn = EOK;
 
-  g_tState.eAction = ACTION_NONE;
+  /* Defaults */
+  g_tState.eAction  = ACTION_NONE;
+  g_tState.bQuiet   = false;
+  g_tState.bForce   = false;
+  g_tState.eMode    = DUMP_NONE;
+  g_tState.uiOffset = 0;
+  g_tState.uiSize   = 0;
+  g_tState.ifile.acPathName[0] = '\0';
+  g_tState.ofile.acPathName[0] = '\0';
 
   int i = 1;
-
   while (i < argc)
   {
-    const char* acArg = argv[i];
+    const char_t* acArg = argv[i];
 
-    if ('-' == acArg[0])
+    if ('-' == acArg[0]) /* Options */
     {
-      if ((0 == stricmp(acArg, "-h")) /* || (0 == stricmp(acArg, "--help")) */)
+      if ((0 == strcmp(acArg, "-h")) || (0 == stricmp(acArg, "--help")))
       {
         g_tState.eAction = ACTION_HELP;
       }
-      else if ((0 == strcmp(acArg, "-v")) /* || (0 == stricmp(acArg, "--version")) */)
+      else if ((0 == strcmp(acArg, "-v")) || (0 == stricmp(acArg, "--version")))
       {
         g_tState.eAction = ACTION_INFO;
       }
-      else if ((0 == strcmp(acArg, "-q")) /* || (0 == stricmp(acArg, "--quiet")) */)
+      else if ((0 == strcmp(acArg, "-q")) || (0 == stricmp(acArg, "--quiet")))
       {
         g_tState.bQuiet = true;
       }
-      else if ((0 == strcmp(acArg, "-f")) /* || (0 == stricmp(acArg, "--force")) */)
+      else if ((0 == strcmp(acArg, "-r")) || (0 == stricmp(acArg, "--force")))
       {
         g_tState.bForce = true;
       }
-     #if 0
-      else if ((0 == stricmp(acArg, "-c")) || (0 == stricmp(acArg, "--count")))
+      else if ((0 == strcmp(acArg, "-l")) || (0 == stricmp(acArg, "--logical")))
+      {
+        if (DUMP_NONE == g_tState.eMode)
+        {
+          g_tState.eMode = DUMP_LOGICAL;
+        }
+        else
+        {
+          fprintf(stderr, "options -l/-p/-f are mutually exclusive\n");
+          iReturn = EINVAL;
+          break;
+        }
+      }
+      else if ((0 == strcmp(acArg, "-p")) || (0 == stricmp(acArg, "--physical")))
+      {
+        if (DUMP_NONE == g_tState.eMode)
+        {
+          g_tState.eMode = DUMP_PHYSICAL;
+        }
+        else
+        {
+          fprintf(stderr, "options -l/-p/-f are mutually exclusive\n");
+          iReturn = EINVAL;
+          break;
+        }
+      }
+      else if ((0 == strcmp(acArg, "-f")) || (0 == stricmp(acArg, "--file")))
+      {
+        if (DUMP_NONE == g_tState.eMode)
+        {
+          if ((i + 1) < argc)
+          {
+            snprintf(g_tState.ifile.acPathName, sizeof(g_tState.ifile.acPathName), "%s", argv[++i]);
+            zxn_normalizepath(g_tState.ifile.acPathName);
+          }
+          else
+          {
+            fprintf(stderr, "option %s requires a path argument\n", acArg);
+            iReturn = EINVAL;
+            break;
+          }
+        }
+        else
+        {
+          fprintf(stderr, "options -l/-p/-f are mutually exclusive\n");
+          iReturn = EINVAL;
+          break;
+        }
+      }
+      else if ((0 == strcmp(acArg, "-o")) || (0 == stricmp(acArg, "--offset")))
       {
         if ((i + 1) < argc)
         {
-          g_tState.uiCount = strtoul(argv[i + 1], 0, 0);
-          ++i;
+          g_tState.uiOffset = strtoul(argv[++i], 0, 0);
+        }
+        else
+        {
+          fprintf(stderr, "option %s requires a value\n", acArg);
+          iReturn = EINVAL;
+          break;
         }
       }
-     #endif
+      else if ((0 == strcmp(acArg, "-s")) || (0 == stricmp(acArg, "--size")))
+      {
+        if ((i + 1) < argc)
+        {
+          g_tState.uiSize = strtoul(argv[++i], 0, 0);
+        }
+        else
+        {
+          fprintf(stderr, "option %s requires a value\n", acArg);
+          iReturn = EINVAL;
+          break;
+        }
+      }
       else
       {
         fprintf(stderr, "unknown option: %s\n", acArg);
@@ -273,28 +388,57 @@ int parseArguments(int argc, char* argv[])
         break;
       }
     }
-    else
+    else /* Arguments */
     {
-      /* snprintf(g_tState.bmpfile.acPathName, sizeof(g_tState.bmpfile.acPathName), "%s", acArg); */
+      if ('\0' == g_tState.ofile.acPathName[0])
+      {
+        snprintf(g_tState.ofile.acPathName, sizeof(g_tState.ofile.acPathName), "%s", acArg);
+        zxn_normalizepath(g_tState.ofile.acPathName);
+      }
+      else
+      {
+        fprintf(stderr, "unexpected extra argument: %s\n", acArg);
+        iReturn = EINVAL;
+        break;
+      }
     }
 
     ++i;
   }
 
-  if (ACTION_NONE == g_tState.eAction)
+  DBGPRINTF("parseArgs() - mode  = %s\n", g_tState.bQuiet ? "quiet" : "interactive");
+  DBGPRINTF("parseArgs() - dump  = %d\n", g_tState.eMode);
+  DBGPRINTF("parseArgs() - offset=0x%08lX\n", (unsigned long) g_tState.uiOffset);
+  DBGPRINTF("parseArgs() - size  =0x%08lX\n", (unsigned long) g_tState.uiSize);
+  DBGPRINTF("parseArgs() - ifile =%s\n", g_tState.ifile.acPathName);
+  DBGPRINTF("parseArgs() - ofile =%s\n", g_tState.ofile.acPathName);
+
+  /* Plausibility checks */
+  if (EOK == iReturn)
   {
-   #if 1
-    g_tState.eAction = ACTION_DUMP;
-   #else
-    if (0 < strnlen(g_tState.bmpfile.acPathName, sizeof(g_tState.bmpfile.acPathName)))
+    if (DUMP_NONE == g_tState.eMode)
     {
-      g_tState.eAction = ACTION_SHOT;
+      fprintf(stderr, "no dump mode specified\n");
+      iReturn = EDOM;
     }
-    else if ('\0' == g_tState.bmpfile.acPathName[0])
+    else if (!g_tState.bQuiet && ('\0' != g_tState.ofile.acPathName[0]))
     {
-      g_tState.eAction = ACTION_SHOT;
+      fprintf(stderr, "no dump to file in interactive mode\n");
+      iReturn = EDOM;
     }
-   #endif
+    else if (g_tState.bQuiet && ('\0' == g_tState.ofile.acPathName[0]))
+    {
+      fprintf(stderr, "output file required in quiet mode\n");
+      iReturn = EDOM;
+    }
+  }
+
+  if (EOK == iReturn)
+  {
+    if (ACTION_NONE == g_tState.eAction)
+    {
+      g_tState.eAction = ACTION_DUMP;
+    }
   }
 
   return iReturn;
@@ -306,32 +450,32 @@ int parseArguments(int argc, char* argv[])
 /*----------------------------------------------------------------------------*/
 int showHelp(void)
 {
-  unsigned char acAppName[0x10];
+  char_t acAppName[0x10];
   strncpy(acAppName, VER_INTERNALNAME_STR, sizeof(acAppName));
   strupr(acAppName);
 
   printf("%s\n\n", VER_FILEDESCRIPTION_STR);
 
-  printf("%s [-f file][-l][-p][-o offset][-s size][-r][-q][-h][-v] file\n\n", acAppName);
+  printf("%s [-f ifile][-l][-p][-o offset][-s size][-r][-q][-h][-v] ofile\n\n", acAppName);
   //      0.........1.........2.........3.
-  printf(" file        pathname of file\n");
+  printf(" ifile       pathname in-file\n");
+  printf(" ofile       pathname out-file\n");
   printf(" -f[ile]     read from file\n");
   printf(" -l[ogical]  read logical mem.\n");
   printf(" -p[hysical] read physical mem.\n");
   printf(" -o[ffset]   offset to read from\n");
-  printf(" -s[ize]     length to read from\n");
+  printf(" -s[ize]     length to read\n");
   printf(" -[fo]r[ce]  force overwrite\n");
-  printf(" -q[uiet]    print no messages\n");
+  printf(" -q[uiet]    no screen output\n");
   printf(" -h[elp]     print this help\n");
   printf(" -v[ersion]  print version info\n");
 
-/*
+  /*
   bindump -p -o 0x21000 -s 0x100 -q c:/home/tmp/dump.bin
   bindump -l -o 0x0000 -s 0x4000 -q c:/home/tmp/dump.bin
   bindump -f c:/dot/ls -o 0x0000 -s 0x10000 -q c:/home/tmp/dump.bin
   bindump -p -o 0x21000,0x100 -q -r c:/home/tmp/dump.bin
-
-*/
+  */
 
   return EOK;
 }
@@ -342,13 +486,19 @@ int showHelp(void)
 /*----------------------------------------------------------------------------*/
 int showInfo(void)
 {
-  unsigned char acAppName[0x10];
+  uint16_t uiOsVersion = esx_m_dosversion();
+
+  char_t acAppName[0x10];
   strncpy(acAppName, VER_INTERNALNAME_STR, sizeof(acAppName));
   strupr(acAppName);
 
   printf("%s " VER_LEGALCOPYRIGHT_STR "\n", acAppName);
+
   //      0.........1.........2.........3.
-  printf(" Version %s\n", VER_FILEVERSION_STR);
+  printf(" Version %s (NextOS %d.%02d)\n",
+         VER_FILEVERSION_STR,
+         ESX_DOSVERSION_NEXTOS_MAJOR(uiOsVersion),
+         ESX_DOSVERSION_NEXTOS_MINOR(uiOsVersion));
   printf(" Stefan Zell (info@diezells.de)\n");
 
   return EOK;

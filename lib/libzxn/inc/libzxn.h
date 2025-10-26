@@ -111,6 +111,10 @@ and linked in debug-builds ("#define __DEBUG__").
 /*============================================================================*/
 /*                               Typ-Definitionen                             */
 /*============================================================================*/
+/*!
+Type definition in short form for a "unsigned char". 
+*/
+typedef unsigned char char_t;
 
 /*============================================================================*/
 /*                               Prototypen                                   */
@@ -146,7 +150,7 @@ error code.
 @param iCode Error code to get it's textual representation
 @return Pointer to a human readable message
 */
-const unsigned char* zxn_strerror(int iCode);
+const char_t* zxn_strerror(int iCode);
 
 /*!
 This function is used to map a physical memory address to a void pointer.
@@ -158,6 +162,13 @@ inline void* zxn_memmap(uint16_t uiPhysAddr)
 {
   return ((void*) uiPhysAddr);
 }
+
+/*!
+In this function cleans up the given path ('\\' => '/', remove trailing '/')
+@param acPath [IN/OUT] Path to clean up
+@return "0" = no error
+*/
+int zxn_normalizepath(char_t* acPath);
 
 /*!
 This function detects the index of the most significant bit in an value of
