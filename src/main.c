@@ -96,31 +96,40 @@ static struct _state
   bool bForce;
 
   /*!
+  Datasource: Logical memory, physical memory, file
   */
   dumpmode_t eMode;
 
   /*!
+  Startoffset of the data to be dumped
   */
   uint32_t uiOffset;
 
   /*!
+  Length of the data to be dumped
   */
   uint32_t uiSize;
 
-  struct
+  /*!
+  File information of the input file
+  */
+  struct _ifile
   {
     char_t acPathName[ESX_PATHNAME_MAX];
     uint8_t hFile;
   } ifile;
 
-  struct
+  /*!
+  File information of the output file
+  */
+  struct _ofile
   {
     char_t acPathName[ESX_PATHNAME_MAX];
     uint8_t hFile;
   } ofile;
 
   /*!
-  Backup: Current speed of Z80
+  Backup: Current speed of Z80N
   */
   uint8_t uiCpuSpeed;
 
@@ -458,9 +467,9 @@ int showHelp(void)
 
   printf("%s [-f ifile][-l][-p][-o offset][-s size][-r][-q][-h][-v] ofile\n\n", acAppName);
   //      0.........1.........2.........3.
-  printf(" ifile       pathname in-file\n");
-  printf(" ofile       pathname out-file\n");
+  printf("  ofile      pathname out-file\n");
   printf(" -f[ile]     read from file\n");
+  printf("  ifile      pathname in-file\n");
   printf(" -l[ogical]  read logical mem.\n");
   printf(" -p[hysical] read physical mem.\n");
   printf(" -o[ffset]   offset to read from\n");

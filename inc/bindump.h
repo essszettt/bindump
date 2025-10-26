@@ -43,22 +43,6 @@
 /*============================================================================*/
 /*                               Defines                                      */
 /*============================================================================*/
-#define ERROR_SPECIFIC (0x0200)
-#define EBREAK   (ERROR_SPECIFIC + 0x00)
-#define ETIMEOUT (ERROR_SPECIFIC + 0x01)
-
-#ifndef ERANGE
-  #define ERANGE __ERANGE
-  #warning "ERANGE not defined in <errno.h> (typo ?)"
-#endif
-
-#ifndef RTM_28MHZ
-  #define RTM_28MHZ 0x03
-  #warning "RTM_28MHZ not defined in <zxn.h>"
-#endif
-
-#define INV_FILE_HND (0xFF)
-#define ESX_DIR_SEP "/"
 
 /*============================================================================*/
 /*                               Namespaces                                   */

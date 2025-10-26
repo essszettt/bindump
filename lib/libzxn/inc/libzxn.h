@@ -78,6 +78,17 @@ Error code: Timeout in operation
 #endif
 
 /*!
+Macro to describe a invalid file handle
+*/
+#define INV_FILE_HND (0xFF)
+
+/*!
+Macro to describe the characzer that is used to separate fragments of a file-/
+directorypath.
+*/
+#define ESX_DIR_SEP "/"
+
+/*!
 With this macro the value of a variable can be limited to the given interval.
 */
 #define constrain(val, min, max) (val <= min ? min : val >= max ? max : val)
