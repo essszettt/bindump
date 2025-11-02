@@ -20,5 +20,15 @@
     ],
     "C_Cpp.default.defines": [
         "__ZXNEXT"
-    ]
+    ],
+
+    "makefile.makePath": "make.exe", // Pfad zu deinem make (Windows-Beispiel)
+    "makefile.configurations": [
+        {"name": "debug",   "makeArgs": ["BUILD=debug"]  },
+        {"name": "release", "makeArgs": ["BUILD=release"]}
+    ],
+    "makefile.makefilePath":  "${workspaceFolder}/build/makefile", 
+    "makefile.makeDirectory": "${workspaceFolder}/build",
+    "makefile.buildTarget": "all",   // optional, Standard-Target
+    "makefile.cleanTarget": "clean"
 }

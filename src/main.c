@@ -43,15 +43,13 @@
 #include <string.h>
 #include <malloc.h>
 #include <errno.h>
-
 #include <arch/zxn.h>
 #include <arch/zxn/esxdos.h>
 #include <arch/zxn/sysvar.h>
 
 #include "libzxn.h"
-
-#include "version.h"
 #include "bindump.h"
+#include "version.h"
 
 /*============================================================================*/
 /*                               Defines                                      */
@@ -72,73 +70,7 @@
 /*!
 In dieser Struktur werden alle globalen Daten der Anwendung gespeichert.
 */
-static struct _state
-{
-  /*!
-  If this flag is set, then this structure is initialized
-  */
-  bool bInitialized;
-
-  /*!
-  Action to execute (help, version, sreenshot, ...)
-  */
-  action_t eAction;
-
-  /*!
-  If this flag is set, no messages are printed to the console while creating a
-  screenshot.
-  */
-  bool bQuiet;
-
-  /*!
-  If this flag is set, existing output files are overwritten
-  */
-  bool bForce;
-
-  /*!
-  Datasource: Logical memory, physical memory, file
-  */
-  dumpmode_t eMode;
-
-  /*!
-  Startoffset of the data to be dumped
-  */
-  uint32_t uiOffset;
-
-  /*!
-  Length of the data to be dumped
-  */
-  uint32_t uiSize;
-
-  /*!
-  File information of the input file
-  */
-  struct _ifile
-  {
-    char_t acPathName[ESX_PATHNAME_MAX];
-    uint8_t hFile;
-  } ifile;
-
-  /*!
-  File information of the output file
-  */
-  struct _ofile
-  {
-    char_t acPathName[ESX_PATHNAME_MAX];
-    uint8_t hFile;
-  } ofile;
-
-  /*!
-  Backup: Current speed of Z80N
-  */
-  uint8_t uiCpuSpeed;
-
-  /*!
-  Exitcode of the application, that is handovered to BASIC
-  */
-  int iExitCode;
-
-} g_tState;
+appstate_t g_tState;
 
 /*============================================================================*/
 /*                               Strukturen                                   */
@@ -183,7 +115,17 @@ int showInfo(void);
 /*!
 This function dump data (to file, to screen, ...)
 */
-int dumpData(void);
+int dump(void);
+
+/*!
+This function dump data to a file
+*/
+int dumpQuiet(void);
+
+/*!
+This function dump data interactively to screen
+*/
+int dumpInteractive(void);
 
 /*============================================================================*/
 /*                               Klassen                                      */
@@ -198,22 +140,53 @@ int dumpData(void);
 /*----------------------------------------------------------------------------*/
 void _construct(void)
 {
-  g_tState.eAction     = ACTION_NONE;
-  g_tState.bQuiet      = false;
-  g_tState.bForce      = false;
-  g_tState.eMode       = DUMP_NONE;
-  g_tState.uiOffset    = 0;
-  g_tState.uiSize      = 0;
-  g_tState.ifile.acPathName[0] = '\0';
-  g_tState.ifile.hFile = INV_FILE_HND;
-  g_tState.ofile.acPathName[0] = '\0';
-  g_tState.ofile.hFile = INV_FILE_HND;
-  g_tState.iExitCode   = EOK;
-  g_tState.uiCpuSpeed  = ZXN_READ_REG(REG_TURBO_MODE) & 0x03;
+  memset(&g_tState, 0, sizeof(g_tState));
 
-  ZXN_WRITE_REG(REG_TURBO_MODE, RTM_28MHZ);
+  if (!g_tState.bInitialized)
+  {
+    g_tState.eAction       = ACTION_NONE;
+    g_tState.bQuiet        = false;
+    g_tState.bForce        = false;
+    g_tState.eMode         = DUMP_NONE;
+    g_tState.uiOffset      = 0;
+    g_tState.uiSize        = 0;
+    g_tState.tRdFile.acPathName[0] = '\0';
+    g_tState.tRdFile.hFile  = INV_FILE_HND;
+    g_tState.tWrFile.acPathName[0] = '\0';
+    g_tState.tWrFile.hFile  = INV_FILE_HND;
+    g_tState.uiCpuSpeed     = ZXN_READ_REG(REG_TURBO_MODE) & 0x03;
+    g_tState.tScreen.uiCols = 32;
+    g_tState.tScreen.uiRows = 22;
+    g_tState.read.uiStride = 0;
+    g_tState.read.uiBegin  = 0;
+    g_tState.read.uiLower  = 0;
+    g_tState.read.uiAddr   = 0;
+    g_tState.read.uiUpper  = 0;
+    g_tState.read.uiEnd    = 0;
+    g_tState.read.pBuffer  = 0;
+    g_tState.iExitCode     = EOK;
 
-  g_tState.bInitialized = true;
+    ZXN_WRITE_REG(REG_TURBO_MODE, RTM_28MHZ);
+
+    g_tState.bInitialized = true;
+  }
+
+  /* Detect current test resolution */
+  struct esx_mode tMode;
+  memset(&tMode, 0, sizeof(tMode));
+
+  if (0 == esx_ide_mode_get(&tMode))
+  {
+    g_tState.tScreen.uiCols = tMode.cols;
+    g_tState.tScreen.uiRows = tMode.rows;
+
+    if ((1 == tMode.mode8.layer) && (2 == tMode.mode8.submode))
+    {
+      g_tState.tScreen.uiCols = (512 / tMode.width); /* 64 | 85 ? */
+    }
+
+    DBGPRINTF("_construct() - textres: %u/%u", g_tState.tScreen.uiCols, g_tState.tScreen.uiRows);
+  }
 }
 
 
@@ -224,16 +197,16 @@ void _destruct(void)
 {
   if (g_tState.bInitialized)
   {
-    if (INV_FILE_HND != g_tState.ofile.hFile)
+    if (INV_FILE_HND != g_tState.tWrFile.hFile)
     {
-      (void) esx_f_close(g_tState.ofile.hFile);
-      g_tState.ofile.hFile = INV_FILE_HND;
+      (void) esx_f_close(g_tState.tWrFile.hFile);
+      g_tState.tWrFile.hFile = INV_FILE_HND;
     }
 
-    if (INV_FILE_HND != g_tState.ifile.hFile)
+    if (INV_FILE_HND != g_tState.tRdFile.hFile)
     {
-      (void) esx_f_close(g_tState.ifile.hFile);
-      g_tState.ifile.hFile = INV_FILE_HND;
+      (void) esx_f_close(g_tState.tRdFile.hFile);
+      g_tState.tRdFile.hFile = INV_FILE_HND;
     }
 
     ZXN_WRITE_REG(REG_TURBO_MODE, g_tState.uiCpuSpeed);
@@ -266,7 +239,7 @@ int main(int argc, char* argv[])
         break;
 
       case ACTION_DUMP:
-        g_tState.iExitCode = dumpData();
+        g_tState.iExitCode = dump();
         break;
     }
   }
@@ -289,13 +262,13 @@ int parseArguments(int argc, char* argv[])
   g_tState.eMode    = DUMP_NONE;
   g_tState.uiOffset = 0;
   g_tState.uiSize   = 0;
-  g_tState.ifile.acPathName[0] = '\0';
-  g_tState.ofile.acPathName[0] = '\0';
+  g_tState.tRdFile.acPathName[0] = '\0';
+  g_tState.tWrFile.acPathName[0] = '\0';
 
   int i = 1;
   while (i < argc)
   {
-    const char_t* acArg = argv[i];
+    const char_t* acArg = /* strrstrip(strstrip(argv[i])) */ argv[i];
 
     if ('-' == acArg[0]) /* Options */
     {
@@ -347,8 +320,8 @@ int parseArguments(int argc, char* argv[])
         {
           if ((i + 1) < argc)
           {
-            snprintf(g_tState.ifile.acPathName, sizeof(g_tState.ifile.acPathName), "%s", argv[++i]);
-            zxn_normalizepath(g_tState.ifile.acPathName);
+            snprintf(g_tState.tRdFile.acPathName, sizeof(g_tState.tRdFile.acPathName), "%s", argv[++i]);
+            zxn_normalizepath(g_tState.tRdFile.acPathName);
           }
           else
           {
@@ -399,10 +372,10 @@ int parseArguments(int argc, char* argv[])
     }
     else /* Arguments */
     {
-      if ('\0' == g_tState.ofile.acPathName[0])
+      if ('\0' == g_tState.tWrFile.acPathName[0])
       {
-        snprintf(g_tState.ofile.acPathName, sizeof(g_tState.ofile.acPathName), "%s", acArg);
-        zxn_normalizepath(g_tState.ofile.acPathName);
+        snprintf(g_tState.tWrFile.acPathName, sizeof(g_tState.tWrFile.acPathName), "%s", acArg);
+        zxn_normalizepath(g_tState.tWrFile.acPathName);
       }
       else
       {
@@ -419,8 +392,8 @@ int parseArguments(int argc, char* argv[])
   DBGPRINTF("parseArgs() - dump  = %d\n", g_tState.eMode);
   DBGPRINTF("parseArgs() - offset=0x%08lX\n", (unsigned long) g_tState.uiOffset);
   DBGPRINTF("parseArgs() - size  =0x%08lX\n", (unsigned long) g_tState.uiSize);
-  DBGPRINTF("parseArgs() - ifile =%s\n", g_tState.ifile.acPathName);
-  DBGPRINTF("parseArgs() - ofile =%s\n", g_tState.ofile.acPathName);
+  DBGPRINTF("parseArgs() - ifile =%s\n", g_tState.tRdFile.acPathName);
+  DBGPRINTF("parseArgs() - ofile =%s\n", g_tState.tWrFile.acPathName);
 
   /* Plausibility checks */
   if (EOK == iReturn)
@@ -430,12 +403,12 @@ int parseArguments(int argc, char* argv[])
       fprintf(stderr, "no dump mode specified\n");
       iReturn = EDOM;
     }
-    else if (!g_tState.bQuiet && ('\0' != g_tState.ofile.acPathName[0]))
+    else if (!g_tState.bQuiet && ('\0' != g_tState.tWrFile.acPathName[0]))
     {
       fprintf(stderr, "no dump to file in interactive mode\n");
       iReturn = EDOM;
     }
-    else if (g_tState.bQuiet && ('\0' == g_tState.ofile.acPathName[0]))
+    else if (g_tState.bQuiet && ('\0' == g_tState.tWrFile.acPathName[0]))
     {
       fprintf(stderr, "output file required in quiet mode\n");
       iReturn = EDOM;
@@ -495,19 +468,27 @@ int showHelp(void)
 /*----------------------------------------------------------------------------*/
 int showInfo(void)
 {
-  uint16_t uiOsVersion = esx_m_dosversion();
+  char_t acBuffer[0x10];
+  uint16_t uiVersion;
 
-  char_t acAppName[0x10];
-  strncpy(acAppName, VER_INTERNALNAME_STR, sizeof(acAppName));
-  strupr(acAppName);
+  strncpy(acBuffer, VER_INTERNALNAME_STR, sizeof(acBuffer));
+  strupr(acBuffer);
 
-  printf("%s " VER_LEGALCOPYRIGHT_STR "\n", acAppName);
+  printf("%s " VER_LEGALCOPYRIGHT_STR "\n", acBuffer);
+
+  if (ESX_DOSVERSION_NEXTOS_48K != (uiVersion = esx_m_dosversion()))
+  {
+    snprintf(acBuffer, sizeof(acBuffer), "NextOS %u.%02u",
+             ESX_DOSVERSION_NEXTOS_MAJOR(uiVersion),
+             ESX_DOSVERSION_NEXTOS_MINOR(uiVersion));
+  }
+  else
+  {
+    strncpy(acBuffer, "48K mode", sizeof(acBuffer));
+  }
 
   //      0.........1.........2.........3.
-  printf(" Version %s (NextOS %d.%02d)\n",
-         VER_FILEVERSION_STR,
-         ESX_DOSVERSION_NEXTOS_MAJOR(uiOsVersion),
-         ESX_DOSVERSION_NEXTOS_MINOR(uiOsVersion));
+  printf(" Version %s (%s)\n", VER_FILEVERSION_STR, acBuffer);
   printf(" Stefan Zell (info@diezells.de)\n");
 
   return EOK;
@@ -515,9 +496,248 @@ int showInfo(void)
 
 
 /*----------------------------------------------------------------------------*/
-/* dumpData()                                                                 */
+/* dump()                                                                     */
 /*----------------------------------------------------------------------------*/
-int dumpData(void)
+int dump(void)
+{
+  int iReturn = EOK;
+
+  /* Detect stride to walk through memory/file */
+  if (EOK == iReturn)
+  {
+    if (85 <= g_tState.tScreen.uiCols)
+    {
+      g_tState.read.uiStride = 16;
+    }
+    else if (64 <= g_tState.tScreen.uiCols)
+    {
+      g_tState.read.uiStride = 16;
+    }
+    else
+    {
+      g_tState.read.uiStride = 8;
+    }
+  }
+
+  /* Calculate bounds of the region to read */
+  if (EOK == iReturn)
+  {
+    uint32_t uiStrideMask = ~(((uint32_t) g_tState.read.uiStride) - UINT32_C(1));
+
+    g_tState.read.uiLower = g_tState.uiOffset;
+    g_tState.read.uiUpper = g_tState.uiOffset + g_tState.uiSize;
+    g_tState.read.uiBegin = g_tState.read.uiLower & uiStrideMask;
+    g_tState.read.uiAddr  = g_tState.read.uiBegin;
+    g_tState.read.uiEnd   = (g_tState.read.uiUpper + (g_tState.read.uiStride - 1)) & uiStrideMask;
+
+    DBGPRINTF("dumpData() - stride=%u", g_tState.read.uiStride);
+    DBGPRINTF("dumpData() - outer=0x%06X-0x%06X", g_tState.read.uiBegin, g_tState.read.uiEnd);
+    DBGPRINTF("dumpData() - inner=0x%06X-0x%06X", g_tState.read.uiLower, g_tState.read.uiUpper);
+  }
+
+  /* Open input file */
+  if (EOK == iReturn)
+  {
+    if (DUMP_FILE == g_tState.eMode)
+    {
+      if ('\0' != g_tState.tRdFile.acPathName[0])
+      {
+        uint8_t uiResult = 0;
+        struct esx_stat tStat;
+        memset(&tStat, 0, sizeof(tStat));
+
+        if (0 == (uiResult = esx_f_stat(g_tState.tRdFile.acPathName, &tStat)))
+        {
+          if (INV_FILE_HND == (g_tState.tRdFile.hFile = esx_f_open(g_tState.tRdFile.acPathName, ESX_MODE_READ | ESX_MODE_OPEN_EXIST)))
+          {
+            iReturn = EBADF;
+          }
+          else
+          {
+            if ((g_tState.uiOffset + g_tState.uiSize) > tStat.size)
+            {
+
+            }
+          }
+        }
+        else
+        {
+          fprintf(stderr, "dumpData() - esx_f_stat(%s) = %u\n", g_tState.tRdFile.acPathName, uiResult);
+          iReturn = EBADF;
+        }
+      }
+    }
+  }
+
+  /* Open output file */
+  if (EOK == iReturn)
+  {
+    if (!g_tState.bQuiet)
+    {
+      if ('\0' != g_tState.tWrFile.acPathName[0])
+      {
+        if (EOK == iReturn)
+        {
+          /* Is argument a directory ? */
+          if (INV_FILE_HND != (g_tState.tWrFile.hFile = esx_f_opendir(g_tState.tWrFile.acPathName)))
+          {
+            uint16_t uiIdx = 0;
+            char_t acPathName[ESX_PATHNAME_MAX];
+
+            esx_f_closedir(g_tState.tWrFile.hFile);
+            g_tState.tWrFile.hFile = INV_FILE_HND;
+
+            while (uiIdx < 0xFFFF)
+            {
+              snprintf(acPathName, sizeof(acPathName),
+                      "%s" ESX_DIR_SEP VER_INTERNALNAME_STR "-%u.txt",
+                      g_tState.tWrFile.acPathName,
+                      uiIdx);
+
+              if (INV_FILE_HND == (g_tState.tWrFile.hFile = esx_f_open(acPathName, ESXDOS_MODE_R | ESXDOS_MODE_OE)))
+              {
+                snprintf(g_tState.tWrFile.acPathName, sizeof(g_tState.tWrFile.acPathName), "%s", acPathName);
+                break;  /* filename found */
+              }
+              else
+              {
+                esx_f_close(g_tState.tWrFile.hFile);
+                g_tState.tWrFile.hFile = INV_FILE_HND;
+              }
+
+              ++uiIdx;
+            }
+
+            if (0xFFFF == uiIdx)
+            {
+              iReturn = ERANGE; /* Error */
+            }
+          }
+          else /* Argument is a file ... */
+          {
+            g_tState.tWrFile.hFile = esx_f_open(g_tState.tWrFile.acPathName, ESXDOS_MODE_R | ESXDOS_MODE_OE);
+
+            if (INV_FILE_HND != g_tState.tWrFile.hFile)
+            {
+              esx_f_close(g_tState.tWrFile.hFile);
+              g_tState.tWrFile.hFile = INV_FILE_HND;
+
+              if (g_tState.bForce)
+              {
+                esx_f_unlink(g_tState.tWrFile.acPathName);
+              }
+              else
+              {
+                iReturn = EBADF; /* Error: File exists */
+              }
+            }
+          }
+        }
+
+        if (EOK == iReturn)
+        {
+          g_tState.tWrFile.hFile = esx_f_open(g_tState.tWrFile.acPathName, ESXDOS_MODE_W | ESXDOS_MODE_CN);
+
+          if (INV_FILE_HND == g_tState.tWrFile.hFile)
+          {
+            iReturn = EACCES; /* Error */
+          }
+        }
+      }
+      else
+      {
+        fprintf(stderr, "no output file specified\n");
+        iReturn = EINVAL;
+      }
+    }
+  }
+
+  /* Execute the dump */
+  if (EOK == iReturn)
+  {
+    if (g_tState.bQuiet)
+    {
+      iReturn = dumpQuiet();
+    }
+    else
+    {
+      iReturn = dumpInteractive();
+    }
+  }
+
+  /* Close open files */
+  if (INV_FILE_HND != g_tState.tRdFile.hFile)
+  {
+    esx_f_close(g_tState.tRdFile.hFile);
+    g_tState.tRdFile.hFile = INV_FILE_HND;
+
+    if (EOK != iReturn)
+    {
+      esx_f_unlink(g_tState.tRdFile.acPathName);
+    }
+  }
+
+  if (INV_FILE_HND != g_tState.tWrFile.hFile)
+  {
+    esx_f_close(g_tState.tWrFile.hFile);
+    g_tState.tWrFile.hFile = INV_FILE_HND;
+  }
+
+  return iReturn;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* dumpQuiet()                                                                */
+/*----------------------------------------------------------------------------*/
+int dumpQuiet(void)
+{
+  int iReturn = EOK;
+
+  /* Walk through the region */
+  if (EOK == iReturn)
+  {
+    if (0 != (g_tState.read.pBuffer = malloc(g_tState.read.uiStride)))
+    {
+      int iResult = EOK;
+
+      while (g_tState.read.uiAddr < g_tState.read.uiEnd)
+      {
+        if (0 < (iResult = readLine(g_tState.eMode, &g_tState.read)))
+        {
+          renderFileLine(&g_tState.read);
+
+          if (INV_FILE_HND != g_tState.tWrFile.hFile)
+          {
+            saveLine(&g_tState.read, &g_tState.tWrFile);
+          }
+
+          g_tState.read.uiAddr += ((uint32_t) g_tState.read.uiStride);
+        }
+        else
+        {
+          iReturn -1 * iResult;
+          break;
+        }
+      }
+
+      free(g_tState.read.pBuffer);
+      g_tState.read.pBuffer = 0;
+    }
+    else
+    {
+      iReturn = ENOMEM;
+    }
+  }
+
+  return iReturn;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* dumpInteractive()                                                          */
+/*----------------------------------------------------------------------------*/
+int dumpInteractive(void)
 {
   int iReturn = EOK;
   return iReturn;

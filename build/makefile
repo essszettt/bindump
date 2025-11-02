@@ -1,8 +1,25 @@
+.PHONY: all clean
+
 ### Target Platform ####################
-TARGET = zxn
+TARGET := zxn
 
 ### Project Name #######################
-APPNAME = bindump
+APPNAME := bindump
+
+### Binary type ########################
+APPTYPE := dotn
+
+### OS specific settings ###############
+ifeq ($(OS),Windows_NT)
+RM := rm -f
+MV := mv -f
+else
+RM := rm -f
+MV := mv -f
+endif
+
+### Build Type #########################
+BUILD ?= release
 
 ### Source Directories #################
 LIB_DIR = ../lib
@@ -12,6 +29,7 @@ BUILD_DIR = .
 
 ### Source Files #######################
 SRCS  = $(SRC_DIR)/main.c
+SRCS += $(SRC_DIR)/bindump.c
 SRCS += $(LIB_DIR)/libzxn/src/libzxn.c
 SRCS += $(LIB_DIR)/libzxn/src/libzxn.asm
 
@@ -24,23 +42,27 @@ CFLAGS += -startup=30
 # tradeoff speed vs. code quality
 CFLAGS += --max-allocs-per-node200000
 
+ifeq ($(BUILD), debug)
 # verbose output
-# CFLAGS += -v
+CFLAGS += -v
 
 # create list files
-# CFLAGS += --list
+CFLAGS += --list
 
 # create debug code
-# CFLAGS += -D__DEBUG__
+CFLAGS += -D__DEBUG__
+endif
 
 ### Linker Flags #######################
-LDFLAGS = -subtype=dotn -Cz"--clean" -create-app -o $(BUILD_DIR)/$(APPNAME) 
+LDFLAGS = -subtype=$(APPTYPE) -Cz"--clean" -create-app -o $(BUILD_DIR)/$(APPNAME)
 
+ifeq ($(BUILD), debug)
 # create map file
-# LDFLAGS += -m
+LDFLAGS += -m
 
 # create symbol files
-# LDFLAGS += -s
+LDFLAGS += -s
+endif
 
 ### Compiler Command ###################
 CC = zcc +$(TARGET) $(CFLAGS) $(SRCS) $(LDFLAGS)
@@ -48,14 +70,21 @@ CC = zcc +$(TARGET) $(CFLAGS) $(SRCS) $(LDFLAGS)
 ### Build Target #######################
 all:
 	$(CC)
-	@rm -f $(BUILD_DIR)/$(APPNAME)
-	@mv -f $(BUILD_DIR)/BINDUM $(BUILD_DIR)/$(APPNAME)
+ifeq ($(APPTYPE), dotn)
+ifeq ($(OS),Windows_NT)
+	@$(RM) $(BUILD_DIR)/$(APPNAME)
+	@$(MV) $(BUILD_DIR)/BINDUM $(BUILD_DIR)/$(APPNAME)
+endif
+endif
 
 ### Cleanup Build Files ################
 clean:
-	@rm -f $(BUILD_DIR)/$(APPNAME)
-	@rm -f $(BUILD_DIR)/$(APPNAME).lis
-	@rm -f $(BUILD_DIR)/$(APPNAME).map
-	@rm -f $(BUILD_DIR)/$(APPNAME).sym
-	@rm -f $(SRC_DIR)/*.lis
-	@rm -f $(SRC_DIR)/*.sym
+	@$(RM) $(BUILD_DIR)/$(APPNAME)
+	@$(RM) $(wildcard $(BUILD_DIR)/*.lis)
+	@$(RM) $(wildcard $(BUILD_DIR)/*.map)
+	@$(RM) $(wildcard $(BUILD_DIR)/*.sym)
+	@$(RM) $(wildcard $(SRC_DIR)/*.lis)
+	@$(RM) $(wildcard $(SRC_DIR)/*.sym)
+	@$(RM) $(wildcard $(LIB_DIR)/libzxn/src/*.lis)
+	@$(RM) $(wildcard $(LIB_DIR)/libzxn/src/*.sym) 
+
