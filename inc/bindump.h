@@ -43,6 +43,15 @@
 /*============================================================================*/
 /*                               Defines                                      */
 /*============================================================================*/
+/*!
+Max. length of a data block, that can be handelt with one operation
+*/
+#define uiMAX_STRIDE (16)
+
+/*!
+Max. length of a screen line
+*/
+#define uiMAX_LINE_LEN (64 + 16 + 8)
 
 /*============================================================================*/
 /*                               Namespaces                                   */
@@ -86,6 +95,24 @@ typedef enum _dumpmode
 } dumpmode_t;
 
 /*!
+File information of the input file
+*/
+typedef struct _fileinfo
+{
+  char_t acPathName[ESX_PATHNAME_MAX];
+  uint8_t hFile;
+} fileinfo_t;
+
+/*!
+Information of the current text-screen-settings  
+*/
+typedef struct _screeninfo
+{
+  uint8_t uiCols;
+  uint8_t uiRows;
+} screeninfo_t;
+
+/*!
 All required information to read data from source
 */
 typedef struct _readbuffer
@@ -123,26 +150,17 @@ typedef struct _readbuffer
   /*!
   Buffer for the read data (dynamically allocated)
   */
-  uint8_t* pBuffer;
+  uint8_t uiData[uiMAX_STRIDE];
 } readbuffer_t;
 
 /*!
-File information of the input file
+All information, that is required to render a line is concentrated in this
+structure
 */
-typedef struct _fileinfo
+typedef struct _renderbuffer
 {
-  char_t acPathName[ESX_PATHNAME_MAX];
-  uint8_t hFile;
-} fileinfo_t;
-
-/*!
-Information of the current text-screen-settings  
-*/
-typedef struct _screeninfo
-{
-  uint8_t uiCols;
-  uint8_t uiRows;
-} screeninfo_t;
+  char_t acData[uiMAX_LINE_LEN];
+} renderbuffer_t;
 
 /*!
 In dieser Struktur werden alle globalen Daten der Anwendung gespeichert.
@@ -208,7 +226,12 @@ typedef struct _appstate
   /*!
   All required information to read data from source
   */
-  readbuffer_t read;
+  readbuffer_t tRead;
+
+  /*!
+  Buffer to render a line for screen/file
+  */
+  renderbuffer_t tRender;
 
   /*!
   Exitcode of the application, that is handovered to BASIC
@@ -221,19 +244,41 @@ typedef struct _appstate
 /*============================================================================*/
 /*!
 */
-int readLine(dumpmode_t eMode, readbuffer_t* pBuffer);
+int readFrame(dumpmode_t eMode, fileinfo_t* pFile, readbuffer_t* pRead);
 
 /*!
 */
-int renderScreenLine(readbuffer_t* pBuffer);
+int renderLine(dumpmode_t eMode, screeninfo_t* pScreen, readbuffer_t* pRead, renderbuffer_t* pRender);
 
 /*!
 */
-int renderFileLine(readbuffer_t* pBuffer);
+int saveFrame(dumpmode_t eMode, readbuffer_t* pRead, fileinfo_t* pFile);
+
+/*!
+Mit dieser Funktion kann eine numerischer Wert in eine hexadezimale Ziffer
+transformiert werden.
+@param uiValue Zu transformierender Wert (nur das Low-Nibble wird verwendet)
+@return Transformierte Hexadezimalziffer
+*/
+char_t nibble2hex(uint8_t uiValue);
 
 /*!
 */
-int saveLine(readbuffer_t* pBuffer, fileinfo_t* pFile);
+int byte2hex(uint8_t uiByte, char_t* acHex);
+
+/*!
+This function checks if a given value is between the limits of a given interval
+(uiMin <= uiVal <= uiMax).
+@param uiVal Value to check
+@param uiMin Lower limit of the interval
+@param uiMax Upper limit of the interval
+@return "true" - value is within the interval;
+        "false" - value is outside of interval
+*/
+inline bool between_uint8(uint8_t uiVal, uint8_t uiMin, uint8_t uiMax)
+{
+  return (uiMin <= uiVal) && (uiVal <= uiMax);
+}
 
 /*============================================================================*/
 /*                               Klassen                                      */

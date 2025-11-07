@@ -3,7 +3,7 @@
 
 // limit the size of printf
 // #pragma printf = "%s %c %d %ld %u %lu %X %lX"
-#pragma printf = "%s %c %d %u"
+#pragma printf = "%s %c %d %u %X %lX"
 
 // non-zero closes open FILEs on exit
 #pragma output CRT_ENABLE_CLOSE = 1   

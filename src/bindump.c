@@ -65,10 +65,6 @@
 /*============================================================================*/
 /*                               Variablen                                    */
 /*============================================================================*/
-/*!
-In dieser Struktur werden alle globalen Daten der Anwendung gespeichert.
-*/
-extern appstate_t g_tState;
 
 /*============================================================================*/
 /*                               Strukturen                                   */
@@ -91,26 +87,19 @@ extern appstate_t g_tState;
 /*============================================================================*/
 
 /*----------------------------------------------------------------------------*/
-/* readLine()                                                                 */
+/* readFrame()                                                                */
 /*----------------------------------------------------------------------------*/
-int readLine(dumpmode_t eMode, readbuffer_t* pRead)
+int readFrame(dumpmode_t eMode, fileinfo_t* pFile, readbuffer_t* pRead)
 {
   int iReturn = EOK;
 
-  if (0 != pRead)
+  if ((0 != pFile) && (0 != pRead))
   {
     switch (eMode)
     {
       case DUMP_LOGICAL:
-        if (0 != pRead->pBuffer)
-        {
-          memcpy(pRead->pBuffer, zxn_memmap(pRead->uiAddr), pRead->uiStride);
-          iReturn = pRead->uiStride;
-        }
-        else
-        {
-          iReturn = -1 * ENOMEM;
-        }
+        memcpy(pRead->uiData, zxn_memmap(pRead->uiAddr), pRead->uiStride);
+        iReturn = pRead->uiStride;
         break;
 
       case DUMP_PHYSICAL:
@@ -118,7 +107,21 @@ int readLine(dumpmode_t eMode, readbuffer_t* pRead)
         break;
 
       case DUMP_FILE:
-        iReturn = -1 * ESTAT;
+        if (INV_FILE_HND != pFile->hFile)
+        {
+          if (0 == esx_f_seek(pFile->hFile, pRead->uiAddr, ESX_SEEK_SET))
+          {
+            iReturn = esx_f_read(pFile->hFile, pRead->uiData, pRead->uiStride);
+          }
+          else
+          {
+            iReturn = -1 * EBADF;
+          }
+        }
+        else
+        {
+          iReturn = -1 * ESTAT;
+        }
         break;
     }
   }
@@ -132,33 +135,139 @@ int readLine(dumpmode_t eMode, readbuffer_t* pRead)
 
 
 /*----------------------------------------------------------------------------*/
-/* renderScreenLine()                                                         */
+/* renderLine()                                                               */
 /*----------------------------------------------------------------------------*/
-int renderScreenLine(readbuffer_t* pBuffer)
+int renderLine(
+  dumpmode_t eMode,
+  screeninfo_t* pScreen,
+  readbuffer_t* pRead,
+  renderbuffer_t* pRender)
 {
   int iReturn = EINVAL;
+
+  if ((0 != pScreen) && (0 != pRead) && (0 != pRender))
+  {
+    char_t* acIdx = &pRender->acData[0];
+
+    if (85 <= pScreen->uiCols) /* 85 x 24 */
+    {
+      byte2hex((pRead->uiAddr >> 16) & 0xFF, acIdx); acIdx += 2;
+      byte2hex((pRead->uiAddr >>  8) & 0xFF, acIdx); acIdx += 2;
+      byte2hex((pRead->uiAddr >>  0) & 0xFF, acIdx); acIdx += 2;
+
+      *acIdx++ = '|';
+
+      for (uint8_t i = 0; i < pRead->uiStride; ++i)
+      {
+        *acIdx++ = ' ';
+        byte2hex(pRead->uiData[i], acIdx); acIdx += 2;
+      }
+
+      *acIdx++ = '|';
+      *acIdx++ = ' ';
+
+      for (uint8_t i = 0; i < pRead->uiStride; ++i)
+      {
+        *acIdx++ = (between_uint8(pRead->uiData[i], ' ', '\xA4') ? pRead->uiData[i] : '.');
+      }
+
+      *acIdx++ =  '|';
+      *acIdx++ = '\0';
+    }
+    else if (64 <= pScreen->uiCols) /* 64 x 24 */
+    {
+      byte2hex((pRead->uiAddr >> 16) & 0xFF, acIdx); acIdx += 2;
+      byte2hex((pRead->uiAddr >>  8) & 0xFF, acIdx); acIdx += 2;
+      byte2hex((pRead->uiAddr >>  0) & 0xFF, acIdx); acIdx += 2;
+
+      *acIdx++ = '|';
+
+      for (uint8_t i = 0; i < pRead->uiStride; i += 2)
+      {
+        byte2hex(pRead->uiData[    i], acIdx); acIdx += 2;
+        byte2hex(pRead->uiData[i + 1], acIdx); acIdx += 2;
+
+        *acIdx++ = ' ';
+      }
+
+      *acIdx++ = '|';
+
+      for (uint8_t i = 0; i < pRead->uiStride; ++i)
+      {
+        *acIdx++ = (between_uint8(pRead->uiData[i], ' ', '\xA4') ? pRead->uiData[i] : '.');
+      }
+
+      *acIdx++ = '\0';
+    }
+    else /* 32 x 24 */
+    {
+      byte2hex((pRead->uiAddr >> 16) & 0xFF, acIdx); acIdx += 2;
+      byte2hex((pRead->uiAddr >>  8) & 0xFF, acIdx); acIdx += 2;
+      byte2hex((pRead->uiAddr >>  0) & 0xFF, acIdx); acIdx += 2;
+
+       *acIdx++ = '|';
+
+      for (uint8_t i = 0; i < pRead->uiStride; ++i)
+      {
+        byte2hex(pRead->uiData[i], acIdx); acIdx += 2;
+      }
+
+      *acIdx++ = '|';
+
+      for (uint8_t i = 0; i < pRead->uiStride; ++i)
+      {
+        *acIdx++ = (between_uint8(pRead->uiData[i], ' ', '\xA4') ? pRead->uiData[i] : '.');
+      }
+
+      *acIdx++ = '\0';
+    }
+  }
+
   return iReturn;
 }
 
 
 /*----------------------------------------------------------------------------*/
-/* renderFileLine()                                                           */
+/* saveFrame()                                                                */
 /*----------------------------------------------------------------------------*/
-int renderFileLine(readbuffer_t* pBuffer)
+int saveFrame(dumpmode_t eMode, readbuffer_t* pRead, fileinfo_t* pFile)
 {
   int iReturn = EINVAL;
+
+  if ((0 != pRead) && (0 != pFile))
+  {
+    
+  }
+
   return iReturn;
 }
 
 
 /*----------------------------------------------------------------------------*/
-/* saveLine()                                                                 */
+/* nibble2hex()                                                               */
 /*----------------------------------------------------------------------------*/
-int saveLine(readbuffer_t* pBuffer, fileinfo_t* pFile)
+char_t nibble2hex(uint8_t uiValue)
 {
-  int iReturn = EINVAL;
-  return iReturn;
+  static const char_t g_acHexDigits[] = "0123456789ABCDEF";
+  return g_acHexDigits[uiValue & 0x0F];
 }
+
+
+/*----------------------------------------------------------------------------*/
+/* byte2hex()                                                                 */
+/*----------------------------------------------------------------------------*/
+int byte2hex(uint8_t uiByte, char_t* acHex)
+{
+  if (0 != acHex)
+  {
+    acHex[0] = nibble2hex((uiByte >> 4) & 0x0F);
+    acHex[1] = nibble2hex(uiByte & 0x0F);
+    return EOK;
+  }
+
+  return EINVAL;
+}
+
 
 
 /*----------------------------------------------------------------------------*/

@@ -43,6 +43,7 @@
 #include <string.h>
 #include <malloc.h>
 #include <errno.h>
+#include <input.h>
 #include <arch/zxn.h>
 #include <arch/zxn/esxdos.h>
 #include <arch/zxn/sysvar.h>
@@ -68,9 +69,9 @@
 /*============================================================================*/
 
 /*!
-In dieser Struktur werden alle globalen Daten der Anwendung gespeichert.
+All global data of the application is saved in this structure
 */
-appstate_t g_tState;
+static appstate_t g_tState;
 
 /*============================================================================*/
 /*                               Strukturen                                   */
@@ -144,27 +145,16 @@ void _construct(void)
 
   if (!g_tState.bInitialized)
   {
-    g_tState.eAction       = ACTION_NONE;
-    g_tState.bQuiet        = false;
-    g_tState.bForce        = false;
-    g_tState.eMode         = DUMP_NONE;
-    g_tState.uiOffset      = 0;
-    g_tState.uiSize        = 0;
-    g_tState.tRdFile.acPathName[0] = '\0';
+    g_tState.eAction        = ACTION_NONE;
+    g_tState.bQuiet         = false;
+    g_tState.bForce         = false;
+    g_tState.eMode          = DUMP_NONE;
     g_tState.tRdFile.hFile  = INV_FILE_HND;
-    g_tState.tWrFile.acPathName[0] = '\0';
     g_tState.tWrFile.hFile  = INV_FILE_HND;
     g_tState.uiCpuSpeed     = ZXN_READ_REG(REG_TURBO_MODE) & 0x03;
     g_tState.tScreen.uiCols = 32;
     g_tState.tScreen.uiRows = 22;
-    g_tState.read.uiStride = 0;
-    g_tState.read.uiBegin  = 0;
-    g_tState.read.uiLower  = 0;
-    g_tState.read.uiAddr   = 0;
-    g_tState.read.uiUpper  = 0;
-    g_tState.read.uiEnd    = 0;
-    g_tState.read.pBuffer  = 0;
-    g_tState.iExitCode     = EOK;
+    g_tState.iExitCode      = EOK;
 
     ZXN_WRITE_REG(REG_TURBO_MODE, RTM_28MHZ);
 
@@ -185,7 +175,7 @@ void _construct(void)
       g_tState.tScreen.uiCols = (512 / tMode.width); /* 64 | 85 ? */
     }
 
-    DBGPRINTF("_construct() - textres: %u/%u", g_tState.tScreen.uiCols, g_tState.tScreen.uiRows);
+    DBGPRINTF("_construct() - textres: %u/%u\n", g_tState.tScreen.uiCols, g_tState.tScreen.uiRows);
   }
 }
 
@@ -388,38 +378,41 @@ int parseArguments(int argc, char* argv[])
     ++i;
   }
 
-  DBGPRINTF("parseArgs() - mode  = %s\n", g_tState.bQuiet ? "quiet" : "interactive");
-  DBGPRINTF("parseArgs() - dump  = %d\n", g_tState.eMode);
-  DBGPRINTF("parseArgs() - offset=0x%08lX\n", (unsigned long) g_tState.uiOffset);
-  DBGPRINTF("parseArgs() - size  =0x%08lX\n", (unsigned long) g_tState.uiSize);
-  DBGPRINTF("parseArgs() - ifile =%s\n", g_tState.tRdFile.acPathName);
-  DBGPRINTF("parseArgs() - ofile =%s\n", g_tState.tWrFile.acPathName);
-
-  /* Plausibility checks */
-  if (EOK == iReturn)
-  {
-    if (DUMP_NONE == g_tState.eMode)
-    {
-      fprintf(stderr, "no dump mode specified\n");
-      iReturn = EDOM;
-    }
-    else if (!g_tState.bQuiet && ('\0' != g_tState.tWrFile.acPathName[0]))
-    {
-      fprintf(stderr, "no dump to file in interactive mode\n");
-      iReturn = EDOM;
-    }
-    else if (g_tState.bQuiet && ('\0' == g_tState.tWrFile.acPathName[0]))
-    {
-      fprintf(stderr, "output file required in quiet mode\n");
-      iReturn = EDOM;
-    }
-  }
+  DBGPRINTF("parseArgs() - mode   = %s\n", g_tState.bQuiet ? "quiet" : "interactive");
+  DBGPRINTF("parseArgs() - dump   = %d\n", g_tState.eMode);
+  DBGPRINTF("parseArgs() - offset = 0x%08lX\n", (unsigned long) g_tState.uiOffset);
+  DBGPRINTF("parseArgs() - size   = 0x%08lX\n", (unsigned long) g_tState.uiSize);
+  DBGPRINTF("parseArgs() - ifile  = %s\n", g_tState.tRdFile.acPathName);
+  DBGPRINTF("parseArgs() - ofile  = %s\n", g_tState.tWrFile.acPathName);
 
   if (EOK == iReturn)
   {
     if (ACTION_NONE == g_tState.eAction)
     {
       g_tState.eAction = ACTION_DUMP;
+    }
+  }
+
+  /* Plausibility checks */
+  if (EOK == iReturn)
+  {
+    if ((ACTION_DUMP == g_tState.eAction))
+    {
+      if (DUMP_NONE == g_tState.eMode)
+      {
+        fprintf(stderr, "no dump mode specified\n");
+        iReturn = EDOM;
+      }
+      else if (!g_tState.bQuiet && ('\0' != g_tState.tWrFile.acPathName[0]))
+      {
+        fprintf(stderr, "no dump to file in interactive mode\n");
+        iReturn = EDOM;
+      }
+      else if (g_tState.bQuiet && ('\0' == g_tState.tWrFile.acPathName[0]))
+      {
+        fprintf(stderr, "output file required in quiet mode\n");
+        iReturn = EDOM;
+      }
     }
   }
 
@@ -507,32 +500,32 @@ int dump(void)
   {
     if (85 <= g_tState.tScreen.uiCols)
     {
-      g_tState.read.uiStride = 16;
+      g_tState.tRead.uiStride = 16;
     }
     else if (64 <= g_tState.tScreen.uiCols)
     {
-      g_tState.read.uiStride = 16;
+      g_tState.tRead.uiStride = 16;
     }
     else
     {
-      g_tState.read.uiStride = 8;
+      g_tState.tRead.uiStride = 8;
     }
   }
 
   /* Calculate bounds of the region to read */
   if (EOK == iReturn)
   {
-    uint32_t uiStrideMask = ~(((uint32_t) g_tState.read.uiStride) - UINT32_C(1));
+    uint32_t uiStrideMask = ~(((uint32_t) g_tState.tRead.uiStride) - UINT32_C(1));
 
-    g_tState.read.uiLower = g_tState.uiOffset;
-    g_tState.read.uiUpper = g_tState.uiOffset + g_tState.uiSize;
-    g_tState.read.uiBegin = g_tState.read.uiLower & uiStrideMask;
-    g_tState.read.uiAddr  = g_tState.read.uiBegin;
-    g_tState.read.uiEnd   = (g_tState.read.uiUpper + (g_tState.read.uiStride - 1)) & uiStrideMask;
+    g_tState.tRead.uiLower = g_tState.uiOffset;
+    g_tState.tRead.uiUpper = g_tState.uiOffset + g_tState.uiSize;
+    g_tState.tRead.uiBegin = g_tState.tRead.uiLower & uiStrideMask;
+    g_tState.tRead.uiAddr  = g_tState.tRead.uiBegin;
+    g_tState.tRead.uiEnd   = (g_tState.tRead.uiUpper + (g_tState.tRead.uiStride - 1)) & uiStrideMask;
 
-    DBGPRINTF("dumpData() - stride=%u", g_tState.read.uiStride);
-    DBGPRINTF("dumpData() - outer=0x%06X-0x%06X", g_tState.read.uiBegin, g_tState.read.uiEnd);
-    DBGPRINTF("dumpData() - inner=0x%06X-0x%06X", g_tState.read.uiLower, g_tState.read.uiUpper);
+    DBGPRINTF("dump() - stride = 0x%02X\n", g_tState.tRead.uiStride);
+    DBGPRINTF("dump() - outer  = 0x%06lX-0x%06lX\n", g_tState.tRead.uiBegin, g_tState.tRead.uiEnd);
+    DBGPRINTF("dump() - inner  = 0x%06lX-0x%06lX\n", g_tState.tRead.uiLower, g_tState.tRead.uiUpper);
   }
 
   /* Open input file */
@@ -697,36 +690,26 @@ int dumpQuiet(void)
   /* Walk through the region */
   if (EOK == iReturn)
   {
-    if (0 != (g_tState.read.pBuffer = malloc(g_tState.read.uiStride)))
-    {
-      int iResult = EOK;
+    int iResult = EOK;
 
-      while (g_tState.read.uiAddr < g_tState.read.uiEnd)
+    while (g_tState.tRead.uiAddr < g_tState.tRead.uiEnd)
+    {
+      if (0 < (iResult = readFrame(g_tState.eMode, &g_tState.tRdFile , &g_tState.tRead)))
       {
-        if (0 < (iResult = readLine(g_tState.eMode, &g_tState.read)))
-        {
-          renderFileLine(&g_tState.read);
+        renderLine(g_tState.eMode, &g_tState.tScreen, &g_tState.tRead, &g_tState.tRender);
 
-          if (INV_FILE_HND != g_tState.tWrFile.hFile)
-          {
-            saveLine(&g_tState.read, &g_tState.tWrFile);
-          }
-
-          g_tState.read.uiAddr += ((uint32_t) g_tState.read.uiStride);
-        }
-        else
+        if (INV_FILE_HND != g_tState.tWrFile.hFile)
         {
-          iReturn -1 * iResult;
-          break;
+          saveFrame(g_tState.eMode, &g_tState.tRead, &g_tState.tWrFile);
         }
+
+        g_tState.tRead.uiAddr += ((uint32_t) g_tState.tRead.uiStride);
       }
-
-      free(g_tState.read.pBuffer);
-      g_tState.read.pBuffer = 0;
-    }
-    else
-    {
-      iReturn = ENOMEM;
+      else
+      {
+        iReturn -1 * iResult;
+        break;
+      }
     }
   }
 
@@ -739,7 +722,7 @@ int dumpQuiet(void)
 /*----------------------------------------------------------------------------*/
 int dumpInteractive(void)
 {
-  int iReturn = EOK;
+  int iReturn = ENOTSUP;
   return iReturn;
 }
 
