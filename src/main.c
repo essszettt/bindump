@@ -50,6 +50,9 @@
 
 #include "libzxn.h"
 #include "bindump.h"
+#include "read.h"
+#include "render.h"
+#include "save.h"
 #include "version.h"
 
 /*============================================================================*/

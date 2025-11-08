@@ -1,6 +1,6 @@
 /*-----------------------------------------------------------------------------+
 |                                                                              |
-| filename: bindump.c                                                          |
+| filename: read.c                                                             |
 | project:  ZX Spectrum Next - BINDUMP                                         |
 | author:   Stefan Zell                                                        |
 | date:     11/01/2025                                                         |
@@ -38,16 +38,16 @@
 /*============================================================================*/
 #include <stdint.h>
 #include <stdbool.h>
-//#include <errno.h>
-//#include <stdio.h>
-//#include <stdlib.h>
-//#include <string.h>
-//#include <malloc.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <arch/zxn.h>
 #include <arch/zxn/esxdos.h>
 
 #include "libzxn.h"
 #include "bindump.h"
+#include "read.h"
 
 /*============================================================================*/
 /*                               Defines                                      */
@@ -86,28 +86,50 @@
 /*============================================================================*/
 
 /*----------------------------------------------------------------------------*/
-/* nibble2hex()                                                               */
+/* readFrame()                                                                */
 /*----------------------------------------------------------------------------*/
-char_t nibble2hex(uint8_t uiValue)
+int readFrame(dumpmode_t eMode, fileinfo_t* pFile, readbuffer_t* pRead)
 {
-  static const char_t g_acHexDigits[] = "0123456789ABCDEF";
-  return g_acHexDigits[uiValue & 0x0F];
-}
+  int iReturn = EOK;
 
-
-/*----------------------------------------------------------------------------*/
-/* byte2hex()                                                                 */
-/*----------------------------------------------------------------------------*/
-int byte2hex(uint8_t uiByte, char_t* acHex)
-{
-  if (0 != acHex)
+  if ((0 != pFile) && (0 != pRead))
   {
-    acHex[0] = nibble2hex((uiByte >> 4) & 0x0F);
-    acHex[1] = nibble2hex(uiByte & 0x0F);
-    return EOK;
+    switch (eMode)
+    {
+      case DUMP_LOGICAL:
+        memcpy(pRead->uiData, zxn_memmap(pRead->uiAddr), pRead->uiStride);
+        iReturn = pRead->uiStride;
+        break;
+
+      case DUMP_PHYSICAL:
+        iReturn = -1 * ESTAT;
+        break;
+
+      case DUMP_FILE:
+        if (INV_FILE_HND != pFile->hFile)
+        {
+          if (0 == esx_f_seek(pFile->hFile, pRead->uiAddr, ESX_SEEK_SET))
+          {
+            iReturn = esx_f_read(pFile->hFile, pRead->uiData, pRead->uiStride);
+          }
+          else
+          {
+            iReturn = -1 * EBADF;
+          }
+        }
+        else
+        {
+          iReturn = -1 * ESTAT;
+        }
+        break;
+    }
+  }
+  else
+  {
+    iReturn = -1 * EINVAL;
   }
 
-  return EINVAL;
+  return iReturn;
 }
 
 

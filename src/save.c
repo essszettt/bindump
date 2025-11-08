@@ -1,6 +1,6 @@
 /*-----------------------------------------------------------------------------+
 |                                                                              |
-| filename: bindump.c                                                          |
+| filename: save.c                                                             |
 | project:  ZX Spectrum Next - BINDUMP                                         |
 | author:   Stefan Zell                                                        |
 | date:     11/01/2025                                                         |
@@ -38,16 +38,13 @@
 /*============================================================================*/
 #include <stdint.h>
 #include <stdbool.h>
-//#include <errno.h>
-//#include <stdio.h>
-//#include <stdlib.h>
-//#include <string.h>
-//#include <malloc.h>
+#include <errno.h>
 #include <arch/zxn.h>
 #include <arch/zxn/esxdos.h>
 
 #include "libzxn.h"
 #include "bindump.h"
+#include "save.h"
 
 /*============================================================================*/
 /*                               Defines                                      */
@@ -86,28 +83,18 @@
 /*============================================================================*/
 
 /*----------------------------------------------------------------------------*/
-/* nibble2hex()                                                               */
+/* saveFrame()                                                                */
 /*----------------------------------------------------------------------------*/
-char_t nibble2hex(uint8_t uiValue)
+int saveFrame(dumpmode_t eMode, readbuffer_t* pRead, fileinfo_t* pFile)
 {
-  static const char_t g_acHexDigits[] = "0123456789ABCDEF";
-  return g_acHexDigits[uiValue & 0x0F];
-}
+  int iReturn = EINVAL;
 
-
-/*----------------------------------------------------------------------------*/
-/* byte2hex()                                                                 */
-/*----------------------------------------------------------------------------*/
-int byte2hex(uint8_t uiByte, char_t* acHex)
-{
-  if (0 != acHex)
+  if ((0 != pRead) && (0 != pFile))
   {
-    acHex[0] = nibble2hex((uiByte >> 4) & 0x0F);
-    acHex[1] = nibble2hex(uiByte & 0x0F);
-    return EOK;
+    
   }
 
-  return EINVAL;
+  return iReturn;
 }
 
 
