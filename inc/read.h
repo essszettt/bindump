@@ -39,10 +39,6 @@
 /*============================================================================*/
 /*                               Includes                                     */
 /*============================================================================*/
-#include <stdint.h>
-#include <stdbool.h>
-#include "libzxn.h"
-#include "bindump.h"
 
 /*============================================================================*/
 /*                               Defines                                      */
@@ -72,6 +68,11 @@
 /*                               Prototypen                                   */
 /*============================================================================*/
 /*!
+This function reads one data frame (block) from the data source
+@param eMode Operationmode (ligocal, physical, file)
+@param pFile Optional: Pointer to file to read from
+@param pRead Pointer to the readbuffer
+@return EOK = no error
 */
 int readFrame(dumpmode_t eMode, fileinfo_t* pFile, readbuffer_t* pRead);
 

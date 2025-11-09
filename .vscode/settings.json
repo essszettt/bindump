@@ -13,7 +13,10 @@
         "arch.h": "c",
         "stddef.h": "c",
         "rect.h": "c",
-        "intrinsic.h": "c"
+        "intrinsic.h": "c",
+        "bindump.h": "c",
+        "string.h": "c",
+        "libzxn.h": "c"
     },
     "C_Cpp.default.includePath": [
         "${z88dk}\\z88dk\\include"

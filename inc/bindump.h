@@ -119,6 +119,7 @@ structure
 typedef struct _renderbuffer
 {
   char_t acData[uiMAX_LINE_LEN];
+  uint8_t uiLen;
 } renderbuffer_t;
 
 /*!
@@ -182,6 +183,11 @@ typedef struct _appstate
   screenshot.
   */
   bool bQuiet;
+
+  /*!
+  If this flag is set, dumping to file is done in hex mode.
+  */
+  bool bHex;
 
   /*!
   If this flag is set, existing output files are overwritten

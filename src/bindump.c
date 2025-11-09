@@ -38,11 +38,9 @@
 /*============================================================================*/
 #include <stdint.h>
 #include <stdbool.h>
-//#include <errno.h>
-//#include <stdio.h>
-//#include <stdlib.h>
-//#include <string.h>
-//#include <malloc.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <arch/zxn.h>
 #include <arch/zxn/esxdos.h>
 

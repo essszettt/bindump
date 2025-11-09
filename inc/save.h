@@ -39,10 +39,6 @@
 /*============================================================================*/
 /*                               Includes                                     */
 /*============================================================================*/
-#include <stdint.h>
-#include <stdbool.h>
-#include "libzxn.h"
-#include "bindump.h"
 
 /*============================================================================*/
 /*                               Defines                                      */
@@ -73,8 +69,16 @@
 /*============================================================================*/
 
 /*!
+This function saves the data of a read frame to a open file.
+@param pRead Pointer to the readbuffer (raw binary data)
+@param pRender Pointer to the renderbuffer (formatted hex data)
+@param pFile Pointer to the fileinfo of the open file
+@return EOK = no error
 */
-int saveFrame(dumpmode_t eMode, readbuffer_t* pRead, fileinfo_t* pFile);
+int saveFrame(
+  const readbuffer_t* pRead,
+  const renderbuffer_t* pRender,
+  const fileinfo_t* pFile);
 
 /*============================================================================*/
 /*                               Klassen                                      */

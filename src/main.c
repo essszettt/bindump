@@ -122,9 +122,9 @@ This function dump data (to file, to screen, ...)
 int dump(void);
 
 /*!
-This function dump data to a file
+This function dump data to a file without user interaction
 */
-int dumpQuiet(void);
+int dumpPassive(void);
 
 /*!
 This function dump data interactively to screen
@@ -150,6 +150,7 @@ void _construct(void)
   {
     g_tState.eAction        = ACTION_NONE;
     g_tState.bQuiet         = false;
+    g_tState.bHex           = false;
     g_tState.bForce         = false;
     g_tState.eMode          = DUMP_NONE;
     g_tState.tRdFile.hFile  = INV_FILE_HND;
@@ -251,6 +252,7 @@ int parseArguments(int argc, char* argv[])
   /* Defaults */
   g_tState.eAction  = ACTION_NONE;
   g_tState.bQuiet   = false;
+  g_tState.bHex     = false;
   g_tState.bForce   = false;
   g_tState.eMode    = DUMP_NONE;
   g_tState.uiOffset = 0;
@@ -272,6 +274,10 @@ int parseArguments(int argc, char* argv[])
       else if ((0 == strcmp(acArg, "-v")) || (0 == stricmp(acArg, "--version")))
       {
         g_tState.eAction = ACTION_INFO;
+      }
+      else if ((0 == strcmp(acArg, "-x")) || (0 == stricmp(acArg, "--hex")))
+      {
+        g_tState.bHex = true;
       }
       else if ((0 == strcmp(acArg, "-q")) || (0 == stricmp(acArg, "--quiet")))
       {
@@ -406,11 +412,13 @@ int parseArguments(int argc, char* argv[])
         fprintf(stderr, "no dump mode specified\n");
         iReturn = EDOM;
       }
+#if 0
       else if (!g_tState.bQuiet && ('\0' != g_tState.tWrFile.acPathName[0]))
       {
         fprintf(stderr, "no dump to file in interactive mode\n");
         iReturn = EDOM;
       }
+#endif
       else if (g_tState.bQuiet && ('\0' == g_tState.tWrFile.acPathName[0]))
       {
         fprintf(stderr, "output file required in quiet mode\n");
@@ -434,7 +442,7 @@ int showHelp(void)
 
   printf("%s\n\n", VER_FILEDESCRIPTION_STR);
 
-  printf("%s [-f ifile][-l][-p][-o offset][-s size][-r][-q][-h][-v] ofile\n\n", acAppName);
+  printf("%s [-f ifile][-l][-p][-o offset][-s size][-r][-x][-q][-h][-v] ofile\n\n", acAppName);
   //      0.........1.........2.........3.
   printf("  ofile      pathname out-file\n");
   printf(" -f[ile]     read from file\n");
@@ -444,6 +452,7 @@ int showHelp(void)
   printf(" -o[ffset]   offset to read from\n");
   printf(" -s[ize]     length to read\n");
   printf(" -[fo]r[ce]  force overwrite\n");
+  printf(" -[he]x      file dump in hex\n");
   printf(" -q[uiet]    no screen output\n");
   printf(" -h[elp]     print this help\n");
   printf(" -v[ersion]  print version info\n");
@@ -452,7 +461,7 @@ int showHelp(void)
   bindump -p -o 0x21000 -s 0x100 -q c:/home/tmp/dump.bin
   bindump -l -o 0x0000 -s 0x4000 -q c:/home/tmp/dump.bin
   bindump -f c:/dot/ls -o 0x0000 -s 0x10000 -q c:/home/tmp/dump.bin
-  bindump -p -o 0x21000,0x100 -q -r c:/home/tmp/dump.bin
+  bindump -p -o 0x21000 -s 0x100 -q -r c:/home/tmp/dump.bin
   */
 
   return EOK;
@@ -586,9 +595,10 @@ int dump(void)
             while (uiIdx < 0xFFFF)
             {
               snprintf(acPathName, sizeof(acPathName),
-                      "%s" ESX_DIR_SEP VER_INTERNALNAME_STR "-%u.txt",
-                      g_tState.tWrFile.acPathName,
-                      uiIdx);
+                       "%s" ESX_DIR_SEP VER_INTERNALNAME_STR "-%u.%s",
+                       g_tState.tWrFile.acPathName,
+                       uiIdx,
+                       g_tState.bHex ? "txt" : "bin");
 
               if (INV_FILE_HND == (g_tState.tWrFile.hFile = esx_f_open(acPathName, ESXDOS_MODE_R | ESXDOS_MODE_OE)))
               {
@@ -651,9 +661,10 @@ int dump(void)
   /* Execute the dump */
   if (EOK == iReturn)
   {
-    if (g_tState.bQuiet)
+    // if (g_tState.bQuiet)
+    if (INV_FILE_HND != g_tState.tWrFile.hFile)
     {
-      iReturn = dumpQuiet();
+      iReturn = dumpPassive();
     }
     else
     {
@@ -684,33 +695,53 @@ int dump(void)
 
 
 /*----------------------------------------------------------------------------*/
-/* dumpQuiet()                                                                */
+/* dumpPassive()                                                              */
 /*----------------------------------------------------------------------------*/
-int dumpQuiet(void)
+int dumpPassive(void)
 {
   int iReturn = EOK;
 
-  /* Walk through the region */
   if (EOK == iReturn)
   {
     int iResult = EOK;
 
+    /* Walk through the region */
     while (g_tState.tRead.uiAddr < g_tState.tRead.uiEnd)
     {
-      if (0 < (iResult = readFrame(g_tState.eMode, &g_tState.tRdFile , &g_tState.tRead)))
+      if (EOK == (iResult = readFrame(g_tState.eMode, &g_tState.tRdFile , &g_tState.tRead)))
       {
-        renderLine(g_tState.eMode, &g_tState.tScreen, &g_tState.tRead, &g_tState.tRender);
+        if (!g_tState.bQuiet || g_tState.bHex)
+        {
+          renderFrame(&g_tState.tScreen, &g_tState.tRead, &g_tState.tRender);
+        }
+
+        if (!g_tState.bQuiet)
+        {
+          printf("%s%s",
+                 g_tState.tRender.acData,
+                 (g_tState.tScreen.uiCols != g_tState.tRender.uiLen ? "\n" : ""));
+        }
 
         if (INV_FILE_HND != g_tState.tWrFile.hFile)
         {
-          saveFrame(g_tState.eMode, &g_tState.tRead, &g_tState.tWrFile);
+          if (g_tState.bHex)
+          {
+#if 0
+            const screeninfo_t tRes = {.uiCols = 80, .uiRows = 1};
+            renderFrame(&tRes, &g_tState.tRead, &g_tState.tRender);
+#endif
+            saveFrame(&g_tState.tRead, &g_tState.tRender, &g_tState.tWrFile);
+          }
+          else
+          {
+            saveFrame(&g_tState.tRead, 0, &g_tState.tWrFile);
+          }
         }
 
-        g_tState.tRead.uiAddr += ((uint32_t) g_tState.tRead.uiStride);
+        g_tState.tRead.uiAddr += g_tState.tRead.uiStride;
       }
       else
       {
-        iReturn -1 * iResult;
         break;
       }
     }
@@ -725,7 +756,30 @@ int dumpQuiet(void)
 /*----------------------------------------------------------------------------*/
 int dumpInteractive(void)
 {
-  int iReturn = ENOTSUP;
+  int iReturn = EOK;
+
+  if (EOK == iReturn)
+  {
+    int iResult = EOK;
+
+    /* Walk through the region */
+    while (g_tState.tRead.uiAddr < g_tState.tRead.uiEnd)
+    {
+      if (EOK == (iResult = readFrame(g_tState.eMode, &g_tState.tRdFile , &g_tState.tRead)))
+      {
+        renderFrame(&g_tState.tScreen, &g_tState.tRead, &g_tState.tRender);
+
+        printf("%s\n", g_tState.tRender.acData);
+
+        g_tState.tRead.uiAddr += g_tState.tRead.uiStride;
+      }
+      else
+      {
+        break;
+      }
+    }
+  }
+
   return iReturn;
 }
 

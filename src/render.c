@@ -83,7 +83,19 @@ This function renders a dataframe in 85 column mode.
 @param pRender Pointer to the render buffer
 @return Current index in the render buffer
 */
-static uint16_t renderLine_85(
+static uint16_t renderFrame_85(
+  uint16_t uiIdx,
+  const readbuffer_t* pRead,
+  renderbuffer_t* pRender);
+
+/*!
+This function renders a dataframe in 80 column mode (write to file).
+@param uiIdx Current index in the render buffer
+@param pRead Pointer to the read buffer
+@param pRender Pointer to the render buffer
+@return Current index in the render buffer
+*/
+static uint16_t renderFrame_80(
   uint16_t uiIdx,
   const readbuffer_t* pRead,
   renderbuffer_t* pRender);
@@ -95,7 +107,7 @@ This function renders a dataframe in 64 column mode.
 @param pRender Pointer to the render buffer
 @return Current index in the render buffer
 */
-static uint16_t renderLine_64(
+static uint16_t renderFrame_64(
   uint16_t uiIdx,
   const readbuffer_t* pRead,
   renderbuffer_t* pRender);
@@ -107,7 +119,7 @@ This function renders a dataframe in 32 column mode.
 @param pRender Pointer to the render buffer
 @return Current index in the render buffer
 */
-static uint16_t renderLine_32(
+static uint16_t renderFrame_32(
   uint16_t uiIdx,
   const readbuffer_t* pRead,
   renderbuffer_t* pRender);
@@ -121,22 +133,22 @@ static uint16_t renderLine_32(
 /*============================================================================*/
 
 /*----------------------------------------------------------------------------*/
-/* renderLine()                                                               */
+/* renderFrame()                                                              */
 /*----------------------------------------------------------------------------*/
-int renderLine(
-  dumpmode_t eMode,
+int renderFrame(
   const screeninfo_t* pScreen,
   const readbuffer_t* pRead,
   renderbuffer_t* pRender)
 {
   int iReturn = EINVAL;
 
-  memset(pRender->acData, ' ', pRead->uiStride);
-  pRender->acData[pRead->uiStride] = '\0';
-
   if ((0 != pScreen) && (0 != pRead) && (0 != pRender))
   {
     char_t* acIdx = &pRender->acData[0];
+
+   #if defined(__DEBUG__)
+    memset(pRender->acData, 0, sizeof(pRender->acData));
+   #endif
 
     byte2hex((pRead->uiAddr >> 16) & 0xFF, acIdx); acIdx += 2;
     byte2hex((pRead->uiAddr >>  8) & 0xFF, acIdx); acIdx += 2;
@@ -144,18 +156,25 @@ int renderLine(
 
     if (85 <= pScreen->uiCols) /* 85 x 24 */
     {
-      acIdx += renderLine_85(acIdx - pRender->acData, pRead, pRender);
+      acIdx += renderFrame_85(acIdx - pRender->acData, pRead, pRender);
+    }
+    else if (80 <= pScreen->uiCols) /* 80 x X (file) */
+    {
+      acIdx += renderFrame_80(acIdx - pRender->acData, pRead, pRender);
     }
     else if (64 <= pScreen->uiCols) /* 64 x 24 */
     {
-      acIdx += renderLine_64(acIdx - pRender->acData, pRead, pRender);
+      acIdx += renderFrame_64(acIdx - pRender->acData, pRead, pRender);
     }
     else /* 32 x 24 */
     {
-      acIdx += renderLine_32(acIdx - pRender->acData, pRead, pRender);
+      acIdx += renderFrame_32(acIdx - pRender->acData, pRead, pRender);
     }
 
-    *acIdx++ = '\0';
+    *acIdx = '\0';
+
+    pRender->uiLen = (uint8_t) (acIdx - pRender->acData);
+    iReturn = EOK;
   }
 
   return iReturn;
@@ -163,9 +182,9 @@ int renderLine(
 
 
 /*----------------------------------------------------------------------------*/
-/* renderLine_85()                                                            */
+/* renderFrame_85()                                                           */
 /*----------------------------------------------------------------------------*/
-static uint16_t renderLine_85(
+static uint16_t renderFrame_85(
   uint16_t uiIdx,
   const readbuffer_t* pRead,
   renderbuffer_t* pRender)
@@ -174,36 +193,45 @@ static uint16_t renderLine_85(
 
   if ((0 != pRead) && (0 != pRender))
   {
-    char_t* acIdx = &pRender->acData[uiIdx];
+    char_t* acBegin = &pRender->acData[uiIdx];
+    char_t* acIdx   = acBegin;
 
-    *acIdx++ = '|';
+    *acIdx++ = ' '; /* * */
+    *acIdx++ = cSEPERATOR_CHAR;
 
     for (uint8_t i = 0; i < pRead->uiStride; ++i)
     {
-      ++acIdx; /* ' ' */
+      *acIdx++ = ' ';
 
       if (between_uint32(pRead->uiAddr + i, pRead->uiLower, pRead->uiUpper, 1))
       {
         byte2hex(pRead->uiData[i], acIdx); 
+        acIdx += 2;
       }
-      acIdx += 2;
+      else
+      {
+        *acIdx++ = ' ';
+        *acIdx++ = ' ';
+      }
     }
 
-    *acIdx++ = '|';
-    ++acIdx; /* ' ' */
+    *acIdx++ = ' '; /* * */
+    *acIdx++ = cSEPERATOR_CHAR;
+    *acIdx++ = ' ';
 
     for (uint8_t i = 0; i < pRead->uiStride; ++i)
     {
       if (between_uint32(pRead->uiAddr + i, pRead->uiLower, pRead->uiUpper, 1))
       {
-        *acIdx = (between_uint8(pRead->uiData[i], ' ', '\xA4') ? pRead->uiData[i] : '.');
+        *acIdx++ = (between_uint8(pRead->uiData[i], cFIRST_CHAR, cLAST_CHAR) ? pRead->uiData[i] : '.');
       }
-      ++acIdx;
+      else
+      {
+        *acIdx++ = ' ';
+      }
     }
 
-    *acIdx++ =  '|';
-
-    uiReturn = acIdx - pRender->acData;
+    uiReturn = (uint16_t) (acIdx - acBegin);
   }
 
   return uiReturn;
@@ -211,9 +239,9 @@ static uint16_t renderLine_85(
 
 
 /*----------------------------------------------------------------------------*/
-/* renderLine_64()                                                            */
+/* renderFrame_80()                                                           */
 /*----------------------------------------------------------------------------*/
-static uint16_t renderLine_64(
+static uint16_t renderFrame_80(
   uint16_t uiIdx,
   const readbuffer_t* pRead,
   renderbuffer_t* pRender)
@@ -222,17 +250,80 @@ static uint16_t renderLine_64(
 
   if ((0 != pRead) && (0 != pRender))
   {
-    char_t* acIdx = &pRender->acData[uiIdx];
+    char_t* acBegin = &pRender->acData[uiIdx];
+    char_t* acIdx   = acBegin;
 
-    *acIdx++ = '|';
+    *acIdx++ = ' ';
+    *acIdx++ = cSEPERATOR_CHAR;
+    *acIdx++ = ' ';
+
+    for (uint8_t i = 0; i < pRead->uiStride; ++i)
+    {
+      if (between_uint32(pRead->uiAddr + i, pRead->uiLower, pRead->uiUpper, 1))
+      {
+        byte2hex(pRead->uiData[i], acIdx); 
+        acIdx += 2;
+      }
+      else
+      {
+        *acIdx++ = ' ';
+        *acIdx++ = ' ';
+      }
+
+      *acIdx++ = ' ';
+    }
+
+    *acIdx++ = cSEPERATOR_CHAR;
+    *acIdx++ = ' ';
+
+    for (uint8_t i = 0; i < pRead->uiStride; ++i)
+    {
+      if (between_uint32(pRead->uiAddr + i, pRead->uiLower, pRead->uiUpper, 1))
+      {
+        *acIdx++ = (between_uint8(pRead->uiData[i], cFIRST_CHAR, cLAST_CHAR) ? pRead->uiData[i] : '.');
+      }
+      else
+      {
+        *acIdx++ = ' ';
+      }
+    }
+
+    uiReturn = (uint16_t) (acIdx - acBegin);
+  }
+
+  return uiReturn;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* renderFrame_64()                                                           */
+/*----------------------------------------------------------------------------*/
+static uint16_t renderFrame_64(
+  uint16_t uiIdx,
+  const readbuffer_t* pRead,
+  renderbuffer_t* pRender)
+{
+  uint16_t uiReturn = 0;
+
+  if ((0 != pRead) && (0 != pRender))
+  {
+    char_t* acBegin = &pRender->acData[uiIdx];
+    char_t* acIdx   = acBegin;
+
+    *acIdx++ = cSEPERATOR_CHAR;
 
     for (uint8_t i = 0; i < pRead->uiStride; i += 2)
     {
       if (between_uint32(pRead->uiAddr + i, pRead->uiLower, pRead->uiUpper, 1))
       {
         byte2hex(pRead->uiData[i], acIdx);
+        acIdx += 2;
       }
-      acIdx += 2;
+      else
+      {
+        *acIdx++ = ' ';
+        *acIdx++ = ' ';
+      }
 
       if (between_uint32(pRead->uiAddr + i + 1, pRead->uiLower, pRead->uiUpper, 1))
       {
@@ -240,21 +331,24 @@ static uint16_t renderLine_64(
       }
       acIdx += 2;
 
-      ++acIdx;
+      *acIdx++ = ' ';
     }
 
-    *acIdx++ = '|';
+    *acIdx++ = cSEPERATOR_CHAR;
 
     for (uint8_t i = 0; i < pRead->uiStride; ++i)
     {
-      if (between_uint32(pRead->uiAddr + i + 1, pRead->uiLower, pRead->uiUpper, 1))
+      if (between_uint32(pRead->uiAddr + i, pRead->uiLower, pRead->uiUpper, 1))
       {
-        *acIdx = (between_uint8(pRead->uiData[i], ' ', '\xA4') ? pRead->uiData[i] : '.');
+        *acIdx++ = (between_uint8(pRead->uiData[i], cFIRST_CHAR, cLAST_CHAR) ? pRead->uiData[i] : '.');
       }
-      ++acIdx;
+      else
+      {
+        *acIdx++ = ' ';
+      }
     }
 
-    uiReturn = acIdx - pRender->acData;
+    uiReturn = (uint16_t) (acIdx - acBegin);
   }
 
   return uiReturn;
@@ -262,9 +356,9 @@ static uint16_t renderLine_64(
 
 
 /*----------------------------------------------------------------------------*/
-/* renderLine_32()                                                            */
+/* renderFrame_32()                                                           */
 /*----------------------------------------------------------------------------*/
-static uint16_t renderLine_32(
+static uint16_t renderFrame_32(
   uint16_t uiIdx,
   const readbuffer_t* pRead,
   renderbuffer_t* pRender)
@@ -273,31 +367,40 @@ static uint16_t renderLine_32(
 
   if ((0 != pRead) && (0 != pRender))
   {
-    char_t* acIdx = &pRender->acData[uiIdx];
+    char_t* acBegin = &pRender->acData[uiIdx];
+    char_t* acIdx   = acBegin;
 
-    *acIdx++ = '|';
+    *acIdx++ = cSEPERATOR_CHAR;
 
     for (uint8_t i = 0; i < pRead->uiStride; ++i)
     {
-      if (between_uint32(pRead->uiAddr + i + 1, pRead->uiLower, pRead->uiUpper, 1))
+      if (between_uint32(pRead->uiAddr + i, pRead->uiLower, pRead->uiUpper, 1))
       {
         byte2hex(pRead->uiData[i], acIdx);
+        acIdx += 2;
       }
-      acIdx += 2;
+      else
+      {
+        *acIdx++ = ' ';
+        *acIdx++ = ' ';
+      }
     }
 
-    *acIdx++ = '|';
+    *acIdx++ = cSEPERATOR_CHAR;
 
     for (uint8_t i = 0; i < pRead->uiStride; ++i)
     {
-      if (between_uint32(pRead->uiAddr + i + 1, pRead->uiLower, pRead->uiUpper, 1))
+      if (between_uint32(pRead->uiAddr + i, pRead->uiLower, pRead->uiUpper, 1))
       {
-        *acIdx = (between_uint8(pRead->uiData[i], ' ', '\xA4') ? pRead->uiData[i] : '.');
+        *acIdx++ = (between_uint8(pRead->uiData[i], cFIRST_CHAR, cLAST_CHAR) ? pRead->uiData[i] : '.');
       }
-      ++acIdx;
+      else
+      {
+        *acIdx++ = ' ';
+      }
     }
 
-    uiReturn = acIdx - pRender->acData;
+    uiReturn = (uint16_t) (acIdx - acBegin);
   }
 
   return uiReturn;

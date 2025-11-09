@@ -39,15 +39,24 @@
 /*============================================================================*/
 /*                               Includes                                     */
 /*============================================================================*/
-#include <stdint.h>
-#include <stdbool.h>
-
-#include "libzxn.h"
-#include "bindump.h"
 
 /*============================================================================*/
 /*                               Defines                                      */
 /*============================================================================*/
+/*!
+First character to show in ASCII-dump
+*/
+#define cFIRST_CHAR ' ' 
+
+/*!
+Last character to show in ASCII-dump
+*/
+#define cLAST_CHAR '\x8F' 
+
+/*!
+Character used as separator between columns
+*/
+#define cSEPERATOR_CHAR '|'
 
 /*============================================================================*/
 /*                               Namespaces                                   */
@@ -74,14 +83,12 @@
 /*============================================================================*/
 /*!
 This function renders a dataframe in to a visual representation (hex dump).
-@param eMode Current index in the render buffer
 @param pScreen Pointer to the screen parameters
 @param pRead Pointer to the read buffer
 @param pRender Pointer to the render buffer
-@return Current index in the render buffer
+@return EOK = no error
 */
-int renderLine(
-  dumpmode_t eMode,
+int renderFrame(
   const screeninfo_t* pScreen,
   const readbuffer_t* pRead,
   renderbuffer_t* pRender);

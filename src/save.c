@@ -73,6 +73,21 @@
 /*============================================================================*/
 /*                               Prototypen                                   */
 /*============================================================================*/
+/*!
+This function saves hex dump line to a file.
+@param pRender Pointer to the render buffer
+@param pFile Pointer to the file info
+@return EOK = no error
+*/
+static int saveFrame_hex(const renderbuffer_t* pRender, const fileinfo_t* pFile);
+
+/*!
+This function saves a raw data block to a file.
+@param pRead Pointer to the read buffer
+@param pFile Pointer to the file info
+@return EOK = no error
+*/
+static int saveFrame_raw(const readbuffer_t* pRead, const fileinfo_t* pFile);
 
 /*============================================================================*/
 /*                               Klassen                                      */
@@ -85,13 +100,93 @@
 /*----------------------------------------------------------------------------*/
 /* saveFrame()                                                                */
 /*----------------------------------------------------------------------------*/
-int saveFrame(dumpmode_t eMode, readbuffer_t* pRead, fileinfo_t* pFile)
+int saveFrame(
+  const readbuffer_t* pRead,
+  const renderbuffer_t* pRender,
+  const fileinfo_t* pFile)
 {
-  int iReturn = EINVAL;
+  int iReturn = EOK;
+
+  if (0 != pRender)
+  {
+    iReturn = saveFrame_hex(pRender, pFile);
+  }
+  else
+  {
+    iReturn = saveFrame_raw(pRead, pFile);
+  }
+
+  return iReturn;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* saveFrame_hex()                                                            */
+/*----------------------------------------------------------------------------*/
+static int saveFrame_hex(const renderbuffer_t* pRender, const fileinfo_t* pFile)
+{
+  int iReturn = EOK;
+
+  if ((0 != pRender) && (0 != pFile))
+  {
+    if (INV_FILE_HND != pFile->hFile)
+    {
+      if (EOK == iReturn)
+      {
+        if (pRender->uiLen != esx_f_write(pFile->hFile, pRender->acData, pRender->uiLen))
+        {
+          iReturn = EBADF;
+        }
+      }
+
+      if (EOK == iReturn)
+      {
+        if (1 != esx_f_write(pFile->hFile, "\n", 1))
+        {
+          iReturn = EBADF;
+        }
+      }
+    }
+  }
+  else
+  {
+    iReturn = EINVAL;
+  }
+
+  return iReturn;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* saveFrame_raw()                                                            */
+/*----------------------------------------------------------------------------*/
+static int saveFrame_raw(const readbuffer_t* pRead, const fileinfo_t* pFile)
+{
+  int iReturn = EOK;
 
   if ((0 != pRead) && (0 != pFile))
   {
-    
+    if (INV_FILE_HND != pFile->hFile)
+    {
+      uint8_t uiFrom;
+      uint8_t uiTo;
+      uint8_t uiLen;
+
+      uiFrom = (pRead->uiAddr < pRead->uiLower ? pRead->uiLower - pRead->uiAddr  : 0);
+      uiTo   = ((pRead->uiAddr + pRead->uiStride) >= pRead->uiUpper ?
+                (pRead->uiAddr + pRead->uiStride) - pRead->uiUpper :
+                pRead->uiStride);
+      uiLen  = uiTo - uiFrom;
+
+      if (uiLen != esx_f_write(pFile->hFile, &pRead->uiData[uiFrom], uiLen))
+      {
+        iReturn = EBADF;
+      }
+    }
+  }
+  else
+  {
+    iReturn = EINVAL;
   }
 
   return iReturn;
