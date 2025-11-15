@@ -834,6 +834,12 @@ int dumpInteractive(void)
               bUpdate = true;
             }
             break;
+
+          case 'q':
+          case 'Q':
+          case ' ':
+            bQuit = true;
+            break;
         }
       }
     }
