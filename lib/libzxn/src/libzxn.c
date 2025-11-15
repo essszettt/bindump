@@ -38,6 +38,7 @@
 /*============================================================================*/
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <ctype.h>
 #include <errno.h>
 
@@ -50,7 +51,7 @@
 /*                               Defines                                      */
 /*============================================================================*/
 /*!
-Marker for the enmd of the list of valid error messages, that can be returned
+End-marker of the list of valid error messages, that can be returned
 to BASIC.
 */
 #define END_OF_LIST (0x7FFF)
@@ -235,6 +236,17 @@ int zxn_normalizepath(char_t* acPath)
   }
 
   return EOK;
+}
+
+
+/*----------------------------------------------------------------------------*/
+/* zxn_gotoxy()                                                               */
+/*----------------------------------------------------------------------------*/
+void zxn_gotoxy(uint8_t uiX, uint8_t uiY)
+{
+  putchar(0x16);
+  putchar(uiY);
+  putchar(uiX);
 }
 
 

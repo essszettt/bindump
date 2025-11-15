@@ -43,10 +43,13 @@
 #include <string.h>
 #include <malloc.h>
 #include <errno.h>
+// #include <conio.h>
 #include <input.h>
+#include <input/input_zx.h>
 #include <arch/zxn.h>
 #include <arch/zxn/esxdos.h>
 #include <arch/zxn/sysvar.h>
+#include <sys/ioctl.h>
 
 #include "libzxn.h"
 #include "bindump.h"
@@ -387,12 +390,15 @@ int parseArguments(int argc, char* argv[])
     ++i;
   }
 
-  DBGPRINTF("parseArgs() - mode   = %s\n", g_tState.bQuiet ? "quiet" : "interactive");
   DBGPRINTF("parseArgs() - dump   = %d\n", g_tState.eMode);
   DBGPRINTF("parseArgs() - offset = 0x%08lX\n", (unsigned long) g_tState.uiOffset);
   DBGPRINTF("parseArgs() - size   = 0x%08lX\n", (unsigned long) g_tState.uiSize);
   DBGPRINTF("parseArgs() - ifile  = %s\n", g_tState.tRdFile.acPathName);
   DBGPRINTF("parseArgs() - ofile  = %s\n", g_tState.tWrFile.acPathName);
+  DBGPRINTF("parseArgs() - quiet=%s; hex=%s; force=%s\n",
+            g_tState.bQuiet ? "true" : "false",
+            g_tState.bHex   ? "true" : "false",
+            g_tState.bForce ? "true" : "false");
 
   if (EOK == iReturn)
   {
@@ -577,83 +583,75 @@ int dump(void)
   /* Open output file */
   if (EOK == iReturn)
   {
-    if (!g_tState.bQuiet)
+    if ('\0' != g_tState.tWrFile.acPathName[0])
     {
-      if ('\0' != g_tState.tWrFile.acPathName[0])
+      if (EOK == iReturn)
       {
-        if (EOK == iReturn)
+        /* Is argument a directory ? */
+        if (INV_FILE_HND != (g_tState.tWrFile.hFile = esx_f_opendir(g_tState.tWrFile.acPathName)))
         {
-          /* Is argument a directory ? */
-          if (INV_FILE_HND != (g_tState.tWrFile.hFile = esx_f_opendir(g_tState.tWrFile.acPathName)))
+          uint16_t uiIdx = 0;
+          char_t acPathName[ESX_PATHNAME_MAX];
+
+          esx_f_closedir(g_tState.tWrFile.hFile);
+          g_tState.tWrFile.hFile = INV_FILE_HND;
+
+          while (uiIdx < 0xFFFF)
           {
-            uint16_t uiIdx = 0;
-            char_t acPathName[ESX_PATHNAME_MAX];
+            snprintf(acPathName, sizeof(acPathName),
+                      "%s" ESX_DIR_SEP VER_INTERNALNAME_STR "-%u.%s",
+                      g_tState.tWrFile.acPathName,
+                      uiIdx,
+                      g_tState.bHex ? "txt" : "bin");
 
-            esx_f_closedir(g_tState.tWrFile.hFile);
-            g_tState.tWrFile.hFile = INV_FILE_HND;
-
-            while (uiIdx < 0xFFFF)
+            if (INV_FILE_HND == (g_tState.tWrFile.hFile = esx_f_open(acPathName, ESXDOS_MODE_R | ESXDOS_MODE_OE)))
             {
-              snprintf(acPathName, sizeof(acPathName),
-                       "%s" ESX_DIR_SEP VER_INTERNALNAME_STR "-%u.%s",
-                       g_tState.tWrFile.acPathName,
-                       uiIdx,
-                       g_tState.bHex ? "txt" : "bin");
-
-              if (INV_FILE_HND == (g_tState.tWrFile.hFile = esx_f_open(acPathName, ESXDOS_MODE_R | ESXDOS_MODE_OE)))
-              {
-                snprintf(g_tState.tWrFile.acPathName, sizeof(g_tState.tWrFile.acPathName), "%s", acPathName);
-                break;  /* filename found */
-              }
-              else
-              {
-                esx_f_close(g_tState.tWrFile.hFile);
-                g_tState.tWrFile.hFile = INV_FILE_HND;
-              }
-
-              ++uiIdx;
+              snprintf(g_tState.tWrFile.acPathName, sizeof(g_tState.tWrFile.acPathName), "%s", acPathName);
+              break;  /* filename found */
             }
-
-            if (0xFFFF == uiIdx)
-            {
-              iReturn = ERANGE; /* Error */
-            }
-          }
-          else /* Argument is a file ... */
-          {
-            g_tState.tWrFile.hFile = esx_f_open(g_tState.tWrFile.acPathName, ESXDOS_MODE_R | ESXDOS_MODE_OE);
-
-            if (INV_FILE_HND != g_tState.tWrFile.hFile)
+            else
             {
               esx_f_close(g_tState.tWrFile.hFile);
               g_tState.tWrFile.hFile = INV_FILE_HND;
+            }
 
-              if (g_tState.bForce)
-              {
-                esx_f_unlink(g_tState.tWrFile.acPathName);
-              }
-              else
-              {
-                iReturn = EBADF; /* Error: File exists */
-              }
+            ++uiIdx;
+          }
+
+          if (0xFFFF == uiIdx)
+          {
+            iReturn = ERANGE; /* Error */
+          }
+        }
+        else /* Argument is a file ... */
+        {
+          g_tState.tWrFile.hFile = esx_f_open(g_tState.tWrFile.acPathName, ESXDOS_MODE_R | ESXDOS_MODE_OE);
+
+          if (INV_FILE_HND != g_tState.tWrFile.hFile)
+          {
+            esx_f_close(g_tState.tWrFile.hFile);
+            g_tState.tWrFile.hFile = INV_FILE_HND;
+
+            if (g_tState.bForce)
+            {
+              esx_f_unlink(g_tState.tWrFile.acPathName);
+            }
+            else
+            {
+              iReturn = EBADF; /* Error: File exists */
             }
           }
         }
-
-        if (EOK == iReturn)
-        {
-          g_tState.tWrFile.hFile = esx_f_open(g_tState.tWrFile.acPathName, ESXDOS_MODE_W | ESXDOS_MODE_CN);
-
-          if (INV_FILE_HND == g_tState.tWrFile.hFile)
-          {
-            iReturn = EACCES; /* Error */
-          }
-        }
       }
-      else
+
+      if (EOK == iReturn)
       {
-        fprintf(stderr, "no output file specified\n");
-        iReturn = EINVAL;
+        g_tState.tWrFile.hFile = esx_f_open(g_tState.tWrFile.acPathName, ESXDOS_MODE_W | ESXDOS_MODE_CN);
+
+        if (INV_FILE_HND == g_tState.tWrFile.hFile)
+        {
+          iReturn = EACCES; /* Error */
+        }
       }
     }
   }
@@ -661,7 +659,6 @@ int dump(void)
   /* Execute the dump */
   if (EOK == iReturn)
   {
-    // if (g_tState.bQuiet)
     if (INV_FILE_HND != g_tState.tWrFile.hFile)
     {
       iReturn = dumpPassive();
@@ -704,6 +701,9 @@ int dumpPassive(void)
   if (EOK == iReturn)
   {
     int iResult = EOK;
+
+    // ioctl(1, OTERM_MSG_SCROLL_LIMIT, (void*) 0);
+    ioctl(fileno(stdout), IOCTL_OTERM_PAUSE, 0);
 
     /* Walk through the region */
     while (g_tState.tRead.uiAddr < g_tState.tRead.uiEnd)
@@ -760,24 +760,84 @@ int dumpInteractive(void)
 
   if (EOK == iReturn)
   {
-    int iResult = EOK;
+    int  iResult = EOK;
+    bool bQuit   = false;
+    bool bUpdate = true;
+    int  iKey;
+    uint32_t uiAddr = g_tState.tRead.uiAddr;
 
-    /* Walk through the region */
-    while (g_tState.tRead.uiAddr < g_tState.tRead.uiEnd)
+    do
     {
-      if (EOK == (iResult = readFrame(g_tState.eMode, &g_tState.tRdFile , &g_tState.tRead)))
+      if (bUpdate)
       {
-        renderFrame(&g_tState.tScreen, &g_tState.tRead, &g_tState.tRender);
+        if (32 < g_tState.tScreen.uiCols)
+        {
+          tshr_cls(INK_YELLOW | PAPER_BLUE);
+        }
+        else
+        {
+          zx_cls(INK_YELLOW | PAPER_BLUE);
+          zx_border(INK_BLUE);
+        }
 
-        printf("%s\n", g_tState.tRender.acData);
+        g_tState.tRead.uiAddr = uiAddr;
 
-        g_tState.tRead.uiAddr += g_tState.tRead.uiStride;
+        for (uint8_t i = 0; i < g_tState.tScreen.uiRows - 1; ++i)
+        {
+          if (EOK == (iResult = readFrame(g_tState.eMode, &g_tState.tRdFile , &g_tState.tRead)))
+          {
+            if (EOK == (iResult = renderFrame(&g_tState.tScreen, &g_tState.tRead, &g_tState.tRender)))
+            {
+              zxn_gotoxy(0, i);
+              printf("%s", g_tState.tRender.acData);
+            }
+
+            g_tState.tRead.uiAddr += g_tState.tRead.uiStride;
+          }
+        }
+
+        bUpdate = false;
       }
-      else
+
+      if (0 != (iKey = in_inkey()))
       {
-        break;
+        switch (iKey)
+        {
+          case 8: // CAPS + 5 = LEFT
+            if (uiAddr < g_tState.tRead.uiUpper)
+            {
+              uiAddr += g_tState.tRead.uiStride;
+              bUpdate = true;
+            }
+            break;
+
+          case 9: // CAPS + 8 = RIGHT
+            if (uiAddr < g_tState.tRead.uiUpper)
+            {
+              uiAddr += g_tState.tRead.uiStride;
+              bUpdate = true;
+            }
+            break;
+            
+          case 10: // CAPS + 6 = DOWN
+            if (uiAddr < g_tState.tRead.uiUpper)
+            {
+              uiAddr += g_tState.tRead.uiStride;
+              bUpdate = true;
+            }
+            break;
+            
+          case 11: // CAPS + 7 = UP
+            if (uiAddr > g_tState.tRead.uiLower)
+            {
+              uiAddr -= g_tState.tRead.uiStride;
+              bUpdate = true;
+            }
+            break;
+        }
       }
     }
+    while (!bQuit);
   }
 
   return iReturn;

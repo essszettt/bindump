@@ -182,6 +182,10 @@ In this function cleans up the given path ('\\' => '/', remove trailing '/')
 int zxn_normalizepath(char_t* acPath);
 
 /*!
+*/
+void zxn_gotoxy(uint8_t uiX, uint8_t uiY);
+
+/*!
 This function detects the index of the most significant bit in an value of
 type "uint8_t"
 @param uiValue Value to compute index of most significant bit
