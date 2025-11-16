@@ -63,13 +63,31 @@
 /*============================================================================*/
 /*                               Typ-Definitionen                             */
 /*============================================================================*/
+/*!
+*/
+typedef enum _rdr_source
+{
+  SOURCE_NONE = 0,
+  SOURCE_LOGICAL,
+  SOURCE_PHYSICAL,
+  SOURCE_FILE
+} rdr_source_t;
+
+/*!
+*/
+typedef struct _rdr_state
+{
+  rdr_source_t eSource;
+  uint32_t uiMaxSize;
+  const char_t* acPathName;
+} rdr_state_t;
 
 /*============================================================================*/
 /*                               Prototypen                                   */
 /*============================================================================*/
 /*!
 This function reads one data frame (block) from the data source
-@param eMode Operationmode (ligocal, physical, file)
+@param eMode Operationmode (logical, physical, file)
 @param pFile Optional: Pointer to file to read from
 @param pRead Pointer to the readbuffer
 @return EOK = no error

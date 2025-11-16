@@ -244,6 +244,26 @@ int zxn_normalizepath(char_t* acPath)
 /*----------------------------------------------------------------------------*/
 void zxn_gotoxy(uint8_t uiX, uint8_t uiY)
 {
+  /*
+  4,x       - Disable (0) or enable (1) vertical scrolling
+
+  8,9,11    - Move in x and y as you would expect
+  12        - Form feed - clears the screen and moves print posn to 0,0
+  10        - Line feed - advances y and sets x to 0
+  13        - Carriage return - sets x to 0
+  16,n      - Set the ink colour (*)
+  17,n      - Set the paper colour (*)
+  20,n      - Enable/disable inverse video (*)
+  22,y,x    - Move to position y,x on the screen (0<=y<=23, 0<=x<=63)
+              NB. y and x are displaced by 32 eg to move the print position
+              to (0,0) use 22,32,32.
+
+  The parameter for those marked with (*) is taken as a bitwise and of the
+  lower 4 bits. Typically these are offset to [0-9] for the lower values.
+
+  11/16/2025 SZ: If using these offsets, then "not supported" from CRT ?!?!? 
+  */
+
   putchar(0x16);
   putchar(uiY);
   putchar(uiX);

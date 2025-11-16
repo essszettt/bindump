@@ -92,11 +92,11 @@ static int readFrame_physical(readbuffer_t* pRead);
 
 /*!
 Read a data frame from a file
-@param pFile Pointer to the file info
 @param pRead Pointer to the read buffer
+@param pFile Pointer to the file info
 @return negativ values on errors; positive values are length of read data
 */
-static int readFrame_file(fileinfo_t* pFile, readbuffer_t* pRead);
+static int readFrame_file(readbuffer_t* pRead, fileinfo_t* pFile);
 
 /*============================================================================*/
 /*                               Klassen                                      */
@@ -130,7 +130,7 @@ int readFrame(dumpmode_t eMode, fileinfo_t* pFile, readbuffer_t* pRead)
         break;
 
       case DUMP_FILE:
-        iReturn = readFrame_file(pFile, pRead);
+        iReturn = readFrame_file(pRead, pFile);
         break;
     }
 
@@ -198,34 +198,41 @@ static int readFrame_physical(readbuffer_t* pRead)
 /*----------------------------------------------------------------------------*/
 /* readFrame_file()                                                           */
 /*----------------------------------------------------------------------------*/
-static int readFrame_file(fileinfo_t* pFile, readbuffer_t* pRead)
+static int readFrame_file(readbuffer_t* pRead, fileinfo_t* pFile)
 {
-  int iReturn = -1 * EINVAL;
+  int iReturn = 0;
 
   if (INV_FILE_HND != pFile->hFile)
   {
-    uint8_t uiFrom;
-    uint8_t uiTo;
-    uint8_t uiLen;
-
-    uiFrom = (pRead->uiAddr < pRead->uiLower ? pRead->uiLower - pRead->uiAddr  : 0);
-    uiTo   = ((pRead->uiAddr + pRead->uiStride) >= pRead->uiUpper ?
-              (pRead->uiAddr + pRead->uiStride) - pRead->uiUpper :
-              pRead->uiStride);
-    uiLen  = uiTo - uiFrom;
-
-    memset(pRead->uiData, 0, uiFrom);
- 
-    if (0 == esx_f_seek(pFile->hFile, pRead->uiAddr, ESX_SEEK_SET))
+    for (uint8_t i = 0; i < pRead->uiStride; ++i)
     {
-      iReturn = esx_f_read(pFile->hFile, pRead->uiData + uiFrom, uiLen);
-    }
-    else
-    {
-      iReturn = -1 * EBADF;
-    }
+      if (between_uint32(pRead->uiAddr + i, pRead->uiLower, pRead->uiUpper, 1))
+      {
+        if (UINT32_C(-1) != esx_f_seek(pFile->hFile, pRead->uiAddr + i, ESX_SEEK_SET))
+        {
+          if (1 == esx_f_read(pFile->hFile, &pRead->uiData[i], 1))
+          {
+            ++iReturn;
+          }
+          else
+          {
+            iReturn = -1 * EBADF;
+            break;
+          }
+        }
+        else
+        {
+          iReturn = -1 * EBADF;
+          break;
+        }
 
-    memset(pRead->uiData + uiTo, 0, pRead->uiStride - uiTo);
+        ++iReturn;
+      }
+      else
+      {
+        pRead->uiData[i] = 0;
+      }
+    }
   }
   else
   {

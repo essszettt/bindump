@@ -43,7 +43,6 @@
 #include <string.h>
 #include <malloc.h>
 #include <errno.h>
-// #include <conio.h>
 #include <input.h>
 #include <input/input_zx.h>
 #include <arch/zxn.h>
@@ -324,6 +323,7 @@ int parseArguments(int argc, char* argv[])
           {
             snprintf(g_tState.tRdFile.acPathName, sizeof(g_tState.tRdFile.acPathName), "%s", argv[++i]);
             zxn_normalizepath(g_tState.tRdFile.acPathName);
+            g_tState.eMode = DUMP_FILE;
           }
           else
           {
@@ -530,6 +530,47 @@ int dump(void)
     }
   }
 
+  /* Open input file */
+  if (EOK == iReturn)
+  {
+    if (DUMP_FILE == g_tState.eMode)
+    {
+      if ('\0' != g_tState.tRdFile.acPathName[0])
+      {
+        uint8_t uiResult = 0;
+        struct esx_stat tStat;
+        memset(&tStat, 0, sizeof(tStat));
+
+        if (0 == (uiResult = esx_f_stat(g_tState.tRdFile.acPathName, &tStat)))
+        {
+          if ((g_tState.uiOffset + g_tState.uiSize) > tStat.size)
+          {
+            if (g_tState.uiOffset < tStat.size)
+            {
+              g_tState.uiSize = tStat.size - g_tState.uiOffset;
+            }
+            else
+            {
+              g_tState.uiOffset = 0;
+              g_tState.uiSize   = tStat.size;
+            }
+          }
+
+          if (INV_FILE_HND == (g_tState.tRdFile.hFile = esx_f_open(g_tState.tRdFile.acPathName, ESX_MODE_READ | ESX_MODE_OPEN_EXIST)))
+          {
+            fprintf(stderr, "dumpData() - esx_f_open(%s) = %u\n", g_tState.tRdFile.acPathName, g_tState.tRdFile.hFile);
+            iReturn = EBADF;
+          }
+        }
+        else
+        {
+          fprintf(stderr, "dumpData() - esx_f_stat(%s) = %u\n", g_tState.tRdFile.acPathName, uiResult);
+          iReturn = EBADF;
+        }
+      }
+    }
+  }
+
   /* Calculate bounds of the region to read */
   if (EOK == iReturn)
   {
@@ -544,40 +585,6 @@ int dump(void)
     DBGPRINTF("dump() - stride = 0x%02X\n", g_tState.tRead.uiStride);
     DBGPRINTF("dump() - outer  = 0x%06lX-0x%06lX\n", g_tState.tRead.uiBegin, g_tState.tRead.uiEnd);
     DBGPRINTF("dump() - inner  = 0x%06lX-0x%06lX\n", g_tState.tRead.uiLower, g_tState.tRead.uiUpper);
-  }
-
-  /* Open input file */
-  if (EOK == iReturn)
-  {
-    if (DUMP_FILE == g_tState.eMode)
-    {
-      if ('\0' != g_tState.tRdFile.acPathName[0])
-      {
-        uint8_t uiResult = 0;
-        struct esx_stat tStat;
-        memset(&tStat, 0, sizeof(tStat));
-
-        if (0 == (uiResult = esx_f_stat(g_tState.tRdFile.acPathName, &tStat)))
-        {
-          if (INV_FILE_HND == (g_tState.tRdFile.hFile = esx_f_open(g_tState.tRdFile.acPathName, ESX_MODE_READ | ESX_MODE_OPEN_EXIST)))
-          {
-            iReturn = EBADF;
-          }
-          else
-          {
-            if ((g_tState.uiOffset + g_tState.uiSize) > tStat.size)
-            {
-
-            }
-          }
-        }
-        else
-        {
-          fprintf(stderr, "dumpData() - esx_f_stat(%s) = %u\n", g_tState.tRdFile.acPathName, uiResult);
-          iReturn = EBADF;
-        }
-      }
-    }
   }
 
   /* Open output file */
@@ -674,17 +681,17 @@ int dump(void)
   {
     esx_f_close(g_tState.tRdFile.hFile);
     g_tState.tRdFile.hFile = INV_FILE_HND;
-
-    if (EOK != iReturn)
-    {
-      esx_f_unlink(g_tState.tRdFile.acPathName);
-    }
   }
 
   if (INV_FILE_HND != g_tState.tWrFile.hFile)
   {
     esx_f_close(g_tState.tWrFile.hFile);
     g_tState.tWrFile.hFile = INV_FILE_HND;
+
+    if (EOK != iReturn)
+    {
+      esx_f_unlink(g_tState.tWrFile.acPathName);
+    }
   }
 
   return iReturn;
@@ -703,7 +710,7 @@ int dumpPassive(void)
     int iResult = EOK;
 
     // ioctl(1, OTERM_MSG_SCROLL_LIMIT, (void*) 0);
-    ioctl(fileno(stdout), IOCTL_OTERM_PAUSE, 0);
+    // ioctl(fileno(stdout), IOCTL_OTERM_PAUSE, 0);
 
     /* Walk through the region */
     while (g_tState.tRead.uiAddr < g_tState.tRead.uiEnd)
@@ -770,6 +777,8 @@ int dumpInteractive(void)
     {
       if (bUpdate)
       {
+        g_tState.tRead.uiAddr = uiAddr;
+
         if (32 < g_tState.tScreen.uiCols)
         {
           tshr_cls(INK_YELLOW | PAPER_BLUE);
@@ -780,20 +789,31 @@ int dumpInteractive(void)
           zx_border(INK_BLUE);
         }
 
-        g_tState.tRead.uiAddr = uiAddr;
-
         for (uint8_t i = 0; i < g_tState.tScreen.uiRows - 1; ++i)
         {
           if (EOK == (iResult = readFrame(g_tState.eMode, &g_tState.tRdFile , &g_tState.tRead)))
           {
             if (EOK == (iResult = renderFrame(&g_tState.tScreen, &g_tState.tRead, &g_tState.tRender)))
             {
-              zxn_gotoxy(0, i);
+              // printf("%c%c%c", 0x16, i, 0);
+              zxn_gotoxy(0, i); 
               printf("%s", g_tState.tRender.acData);
             }
-
-            g_tState.tRead.uiAddr += g_tState.tRead.uiStride;
+            else
+            {
+              iReturn = iResult;
+              bQuit = true;
+              break;
+            }
           }
+          else
+          {
+            iReturn = iResult;
+            bQuit = true;
+            break;
+          }
+
+          g_tState.tRead.uiAddr += ((uint32_t) g_tState.tRead.uiStride);
         }
 
         bUpdate = false;
@@ -804,9 +824,9 @@ int dumpInteractive(void)
         switch (iKey)
         {
           case 8: // CAPS + 5 = LEFT
-            if (uiAddr < g_tState.tRead.uiUpper)
+            if (uiAddr > g_tState.tRead.uiLower)
             {
-              uiAddr += g_tState.tRead.uiStride;
+              uiAddr -= (((uint32_t) (g_tState.tScreen.uiRows - 1)) * ((uint32_t) g_tState.tRead.uiStride));
               bUpdate = true;
             }
             break;
@@ -814,7 +834,7 @@ int dumpInteractive(void)
           case 9: // CAPS + 8 = RIGHT
             if (uiAddr < g_tState.tRead.uiUpper)
             {
-              uiAddr += g_tState.tRead.uiStride;
+              uiAddr += (((uint32_t) (g_tState.tScreen.uiRows - 1)) * ((uint32_t) g_tState.tRead.uiStride));
               bUpdate = true;
             }
             break;
@@ -822,7 +842,7 @@ int dumpInteractive(void)
           case 10: // CAPS + 6 = DOWN
             if (uiAddr < g_tState.tRead.uiUpper)
             {
-              uiAddr += g_tState.tRead.uiStride;
+              uiAddr += ((uint32_t) g_tState.tRead.uiStride);
               bUpdate = true;
             }
             break;
@@ -830,7 +850,7 @@ int dumpInteractive(void)
           case 11: // CAPS + 7 = UP
             if (uiAddr > g_tState.tRead.uiLower)
             {
-              uiAddr -= g_tState.tRead.uiStride;
+              uiAddr -= ((uint32_t) g_tState.tRead.uiStride);
               bUpdate = true;
             }
             break;
