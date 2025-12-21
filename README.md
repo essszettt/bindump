@@ -9,6 +9,9 @@ Application (dot command) to create memory and file dumps on ZX Spectrum Next.
 
 This application can dump the content of files, logical memory and physical memory. The content can be saved raw or as hex dump in files and can be printed as hexdump on the screen.
 
+!!! DEVELOPMENT STOPPED !!!
+All "printf" to row "10" and "13" and column "10" and "13" terminates the application with BASIC-error "not supported". Until this is not clarified, further development is stopped ...
+
 ---
 
 # REMARK
